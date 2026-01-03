@@ -1,122 +1,234 @@
+import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/features/addons/screens/add_addon_screen.dart';
+import 'package:cloud_admin/features/addons/screens/addons_screen.dart';
+import 'package:cloud_admin/features/auth/screens/login_screen.dart';
+import 'package:cloud_admin/features/banners/screens/add_banner_screen.dart';
+import 'package:cloud_admin/features/banners/screens/banners_screen.dart';
+import 'package:cloud_admin/features/categories/screens/add_category_screen.dart';
+import 'package:cloud_admin/features/categories/screens/categories_screen.dart';
+import 'package:cloud_admin/features/cities/screens/add_city_screen.dart';
+import 'package:cloud_admin/features/cities/screens/cities_screen.dart';
+import 'package:cloud_admin/features/dashboard/screens/dashboard_screen.dart';
+import 'package:cloud_admin/features/analytics/screens/analytics_screen.dart';
+import 'package:cloud_admin/features/bookings/screens/bookings_screen.dart';
+import 'package:cloud_admin/features/notifications/screens/add_notification_screen.dart';
+import 'package:cloud_admin/features/notifications/screens/notifications_screen.dart';
+import 'package:cloud_admin/features/profile/screens/profile_screen.dart';
+import 'package:cloud_admin/features/services/screens/add_service_screen.dart';
+import 'package:cloud_admin/features/services/screens/services_screen.dart';
+import 'package:cloud_admin/features/sub_categories/screens/add_sub_category_screen.dart';
+import 'package:cloud_admin/features/sub_categories/screens/sub_categories_screen.dart';
+import 'package:cloud_admin/features/testimonials/screens/testimonials_screen.dart';
+import 'package:cloud_admin/features/users/screens/users_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_about_us_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_hero_section_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_stats_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_testimonials_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_why_choose_us_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/web_landing_screen.dart';
+import 'package:cloud_admin/layout/dashboard_layout.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() async {
+  await dotenv.load(fileName: ".env");
+  final prefs = await SharedPreferences.getInstance();
+  final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+
+  runApp(ProviderScope(child: CloudAdminApp(isLoggedIn: isLoggedIn)));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class CloudAdminApp extends StatefulWidget {
+  final bool isLoggedIn;
+  const CloudAdminApp({super.key, this.isLoggedIn = false});
 
-  // This widget is the root of your application.
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
+  State<CloudAdminApp> createState() => _CloudAdminAppState();
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class _CloudAdminAppState extends State<CloudAdminApp> {
+  late final GoRouter _router;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: widget.isLoggedIn ? '/' : '/login',
+      routes: [
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const LoginScreen(),
+        ),
+        ShellRoute(
+          pageBuilder: (context, state, child) {
+            return NoTransitionPage(
+              child: DashboardLayout(child: child),
+            );
+          },
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (context, state) => const DashboardScreen(),
+            ),
+            GoRoute(
+              path: '/users',
+              builder: (context, state) => const UsersScreen(),
+            ),
+            GoRoute(
+              path: '/bookings',
+              builder: (context, state) => const BookingsScreen(),
+            ),
+            GoRoute(
+              path: '/analytics',
+              builder: (context, state) => const AnalyticsScreen(),
+            ),
+            GoRoute(
+              path: '/categories',
+              builder: (context, state) => const CategoriesScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final categoryToEdit = state.extra as Map<String, dynamic>?;
+                    return AddCategoryScreen(categoryToEdit: categoryToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/banners',
+              builder: (context, state) => const BannersScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final bannerToEdit = state.extra as Map<String, dynamic>?;
+                    return AddBannerScreen(bannerToEdit: bannerToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/sub-categories',
+              builder: (context, state) => const SubCategoriesScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final subCategoryToEdit =
+                        state.extra as Map<String, dynamic>?;
+                    return AddSubCategoryScreen(
+                        subCategoryToEdit: subCategoryToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/notifications',
+              builder: (context, state) => const NotificationsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final notificationToEdit =
+                        state.extra as Map<String, dynamic>?;
+                    return AddNotificationScreen(
+                        notificationToEdit: notificationToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/services',
+              builder: (context, state) => const ServicesScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final serviceToEdit = state.extra as Map<String, dynamic>?;
+                    return AddServiceScreen(serviceToEdit: serviceToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/cities',
+              builder: (context, state) => const CitiesScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final cityToEdit = state.extra as Map<String, dynamic>?;
+                    return AddCityScreen(cityToEdit: cityToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/addons',
+              builder: (context, state) => const AddonsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final addonToEdit = state.extra as Map<String, dynamic>?;
+                    return AddAddonScreen(addonToEdit: addonToEdit);
+                  },
+                ),
+              ],
+            ),
+            GoRoute(
+              path: '/testimonials',
+              builder: (context, state) => const TestimonialsScreen(),
+            ),
+            GoRoute(
+              path: '/profile',
+              builder: (context, state) => const ProfileScreen(),
+            ),
+            GoRoute(
+              path: '/web-landing',
+              builder: (context, state) => const WebLandingScreen(),
+              routes: [
+                GoRoute(
+                  path: 'hero',
+                  builder: (context, state) => const EditHeroSectionScreen(),
+                ),
+                GoRoute(
+                  path: 'about',
+                  builder: (context, state) => const EditAboutUsScreen(),
+                ),
+                GoRoute(
+                  path: 'stats',
+                  builder: (context, state) => const EditStatsScreen(),
+                ),
+                GoRoute(
+                  path: 'testimonials',
+                  builder: (context, state) => const EditTestimonialsScreen(),
+                ),
+                GoRoute(
+                  path: 'why-choose-us',
+                  builder: (context, state) => const EditWhyChooseUsScreen(),
+                ),
+              ],
             ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Urban Admin',
+      theme: AppTheme.lightTheme,
+      routerConfig: _router,
+      debugShowCheckedModeBanner: false,
     );
   }
 }
