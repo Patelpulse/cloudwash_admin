@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -93,7 +93,7 @@ class _AddBannerScreenState extends State<AddBannerScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.bannerToEdit != null;
       final url = isEditing
           ? '$baseUrl/banners/${widget.bannerToEdit!['_id']}'

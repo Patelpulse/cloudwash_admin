@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_admin/features/addons/widgets/addon_card.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
@@ -26,7 +26,7 @@ class _AddonsScreenState extends State<AddonsScreen> {
 
   Future<void> _fetchAddons() async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response = await http.get(Uri.parse('$baseUrl/addons'));
 
       if (response.statusCode == 200) {
@@ -69,7 +69,7 @@ class _AddonsScreenState extends State<AddonsScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+        final baseUrl = AppConfig.apiUrl;
         final response = await http.delete(Uri.parse('$baseUrl/addons/$id'));
 
         if (response.statusCode == 200) {
@@ -225,12 +225,23 @@ class _AddonsScreenState extends State<AddonsScreen> {
           itemCount: _addons.length,
           itemBuilder: (context, index) {
             final addon = _addons[index];
+            final catName =
+                (addon['category'] != null && addon['category'] is Map)
+                    ? addon['category']['name']
+                    : null;
+            final subCatName =
+                (addon['subCategory'] != null && addon['subCategory'] is Map)
+                    ? addon['subCategory']['name']
+                    : null;
+
             return AddonCard(
               title: addon['name'] ?? 'No Name',
               description: addon['description'] ?? '',
               price: '₹${addon['price']}',
               duration: addon['duration'] ?? '',
               imageUrl: addon['imageUrl'],
+              category: catName,
+              subCategory: subCatName,
               placeholderColor: Colors.grey.shade800,
               onEdit: () async {
                 await context.push('/addons/add', extra: addon);

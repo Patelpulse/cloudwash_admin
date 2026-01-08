@@ -209,7 +209,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               },
               onDelete: () => _deleteCategory(cat['_id']),
               onViewSubCategories: () =>
-                  GoRouter.of(context).go('/sub-categories'),
+                  context.go('/sub-categories', extra: cat['name']),
             );
           },
         );

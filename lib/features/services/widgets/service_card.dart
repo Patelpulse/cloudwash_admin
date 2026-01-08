@@ -12,6 +12,9 @@ class ServiceCard extends StatelessWidget {
   final Color placeholderColor;
   final String? imageUrl;
 
+  final bool isSelected;
+  final ValueChanged<bool?> onSelectChanged;
+
   const ServiceCard({
     super.key,
     required this.title,
@@ -23,6 +26,8 @@ class ServiceCard extends StatelessWidget {
     required this.onDelete,
     required this.placeholderColor,
     this.imageUrl,
+    this.isSelected = false,
+    required this.onSelectChanged,
   });
 
   @override
@@ -64,6 +69,16 @@ class ServiceCard extends StatelessWidget {
                       )
                     : Icon(Icons.cleaning_services,
                         size: 48, color: Colors.white.withValues(alpha: 0.5)),
+              ),
+              Positioned(
+                top: 12,
+                left: 12,
+                child: Checkbox(
+                  value: isSelected,
+                  onChanged: onSelectChanged,
+                  activeColor: AppTheme.primaryBlue,
+                  side: const BorderSide(color: Colors.white, width: 2),
+                ),
               ),
               Positioned(
                 top: 12,

@@ -68,6 +68,11 @@ class Sidebar extends StatelessWidget {
                   path: '/categories',
                 ),
                 _SidebarItem(
+                  icon: Icons.grid_view_outlined,
+                  title: 'Sub-Categories',
+                  path: '/sub-categories',
+                ),
+                _SidebarItem(
                   icon: Icons.cleaning_services_outlined,
                   title: 'Services',
                   path: '/services',

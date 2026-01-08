@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_admin/features/notifications/widgets/notification_item.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
@@ -26,7 +26,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _fetchNotifications() async {
     setState(() => _isLoading = true);
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response = await http.get(Uri.parse('$baseUrl/notifications'));
 
       if (response.statusCode == 200) {
@@ -57,7 +57,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _deleteNotification(String id) async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response =
           await http.delete(Uri.parse('$baseUrl/notifications/$id'));
 

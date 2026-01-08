@@ -2,12 +2,13 @@ import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:cloud_admin/features/sub_categories/widgets/sub_category_card.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SubCategoriesScreen extends StatefulWidget {
-  const SubCategoriesScreen({super.key});
+  final String? initialCategoryFilter;
+  const SubCategoriesScreen({super.key, this.initialCategoryFilter});
 
   @override
   State<SubCategoriesScreen> createState() => _SubCategoriesScreenState();
@@ -22,12 +23,26 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialCategoryFilter != null) {
+      _selectedCategoryFilter = widget.initialCategoryFilter!;
+    }
     _fetchData();
+  }
+
+  @override
+  void didUpdateWidget(covariant SubCategoriesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialCategoryFilter != oldWidget.initialCategoryFilter) {
+      setState(() {
+        _selectedCategoryFilter =
+            widget.initialCategoryFilter ?? 'All Categories';
+      });
+    }
   }
 
   Future<void> _fetchData() async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
 
       // Fetch Sub Categories
       final subResponse = await http.get(Uri.parse('$baseUrl/sub-categories'));
@@ -81,7 +96,7 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
     if (!confirm) return;
 
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response =
           await http.delete(Uri.parse('$baseUrl/sub-categories/$id'));
 

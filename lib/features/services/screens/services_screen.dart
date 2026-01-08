@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:cloud_admin/features/services/widgets/service_card.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
@@ -17,6 +17,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
   List<dynamic> _services = [];
   bool _isLoading = true;
   String _errorMessage = '';
+  final Set<String> _selectedServiceIds = {};
 
   @override
   void initState() {
@@ -26,7 +27,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
   Future<void> _fetchServices() async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response = await http.get(Uri.parse('$baseUrl/services'));
 
       if (response.statusCode == 200) {
@@ -69,7 +70,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+        final baseUrl = AppConfig.apiUrl;
         final response = await http.delete(Uri.parse('$baseUrl/services/$id'));
 
         if (response.statusCode == 200) {
@@ -87,6 +88,85 @@ class _ServicesScreenState extends State<ServicesScreen> {
           }
         }
       } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _toggleSelectAll(bool? selected) {
+    setState(() {
+      if (selected == true) {
+        _selectedServiceIds.addAll(_services.map((s) => s['_id'] as String));
+      } else {
+        _selectedServiceIds.clear();
+      }
+    });
+  }
+
+  void _onServiceSelected(String id, bool? selected) {
+    setState(() {
+      if (selected == true) {
+        _selectedServiceIds.add(id);
+      } else {
+        _selectedServiceIds.remove(id);
+      }
+    });
+  }
+
+  Future<void> _bulkDelete() async {
+    final count = _selectedServiceIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Bulk Delete'),
+        content:
+            Text('Are you sure you want to delete $count selected services?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child:
+                const Text('Delete All', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        final baseUrl = AppConfig.apiUrl;
+        final response = await http.post(
+          Uri.parse('$baseUrl/services/bulk-delete'),
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode({'ids': _selectedServiceIds.toList()}),
+        );
+
+        if (response.statusCode == 200) {
+          _selectedServiceIds.clear();
+          _fetchServices();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$count services deleted successfully')),
+            );
+          }
+        } else {
+          setState(() => _isLoading = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to delete services')),
+            );
+          }
+        }
+      } catch (e) {
+        setState(() => _isLoading = false);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error: $e')),
@@ -122,21 +202,44 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   color: Colors.black87,
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await context.push('/services/add');
-                  _fetchServices();
-                },
-                icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                label: const Text('Add New Service',
-                    style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryBlue,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+              Row(
+                children: [
+                  if (_selectedServiceIds.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: ElevatedButton.icon(
+                        onPressed: _bulkDelete,
+                        icon: const Icon(Icons.delete_sweep,
+                            size: 18, color: Colors.white),
+                        label: Text(
+                            'Delete Selected (${_selectedServiceIds.length})',
+                            style: const TextStyle(color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.push('/services/add');
+                      _fetchServices();
+                    },
+                    icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                    label: const Text('Add New Service',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryBlue,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -181,6 +284,23 @@ class _ServicesScreenState extends State<ServicesScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              height: 30,
+              width: 1,
+              color: Colors.grey.shade300,
+            ),
+          ),
+          Checkbox(
+            value: _selectedServiceIds.length == _services.length &&
+                _services.isNotEmpty,
+            onChanged: _toggleSelectAll,
+            activeColor: AppTheme.primaryBlue,
+          ),
+          const Text('Select All',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(width: 8),
         ],
       ),
     );
@@ -225,6 +345,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
               isActive: s['isActive'] == true,
               imageUrl: s['imageUrl'],
               placeholderColor: Colors.blue.shade100, // Or dynamic
+              isSelected: _selectedServiceIds.contains(s['_id']),
+              onSelectChanged: (v) => _onServiceSelected(s['_id'], v),
               onEdit: () async {
                 await context.push('/services/add', extra: s);
                 _fetchServices();

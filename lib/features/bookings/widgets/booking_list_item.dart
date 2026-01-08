@@ -6,9 +6,9 @@ class BookingListItem extends StatelessWidget {
   final String id;
   final String status;
   final String customer;
-  final String vendor;
   final String date;
   final String amount;
+  final VoidCallback? onTap;
 
   const BookingListItem({
     super.key,
@@ -16,130 +16,112 @@ class BookingListItem extends StatelessWidget {
     required this.id,
     required this.status,
     required this.customer,
-    required this.vendor,
     required this.date,
     required this.amount,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade400,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child:
-                        const Icon(Icons.build, color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
                     children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
+                        child: const Icon(Icons.cleaning_services,
+                            color: Colors.blue, size: 24),
                       ),
-                      Text(
-                        id,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                        ),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            id,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
-              _buildStatusBadge(status),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-          const SizedBox(height: 16),
-          // Details Grid
-          _buildDetailRow(Icons.person, 'Customer', customer),
-          const SizedBox(height: 8),
-          _buildDetailRow(Icons.store, 'Vendor', vendor),
-          const SizedBox(height: 8),
-          _buildDetailRow(Icons.calendar_today, 'Date', date),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.payments, size: 16, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Text('Amount',
-                      style:
-                          TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                ],
-              ),
-              Text(
-                amount,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.successGreen,
-                  fontSize: 14,
                 ),
-              ),
-            ],
-          ),
-        ],
+                _buildStatusBadge(status),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildInfoItem(Icons.person_outline, customer),
+                _buildInfoItem(Icons.calendar_today_outlined, date),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text('Total Amount',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    Text(amount,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: Colors.green)),
+                  ],
+                )
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
+  Widget _buildInfoItem(IconData icon, String text) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(label,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-          ],
-        ),
-        Text(
-          value,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            color: Colors.black87,
-            fontSize: 13,
-          ),
-        ),
+        Icon(icon, size: 16, color: Colors.grey),
+        const SizedBox(width: 8),
+        Text(text,
+            style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                color: Colors.black87)),
       ],
     );
   }
@@ -147,19 +129,24 @@ class BookingListItem extends StatelessWidget {
   Widget _buildStatusBadge(String status) {
     Color bg;
     Color fg;
-    String text = status;
+    String text = status.toUpperCase().replaceAll('_', ' ');
 
-    if (status == 'Waiting_vendor_response') {
-      bg = Colors.orange.shade100;
-      fg = Colors.orange.shade800;
-      text = 'Waiting_vendor_response';
-    } else if (status == 'Work_completed') {
-      bg = Colors.green.shade100;
-      fg = Colors.green.shade800;
-      text = 'Work_completed';
-    } else {
-      bg = Colors.grey.shade100;
-      fg = Colors.grey.shade800;
+    switch (status.toLowerCase()) {
+      case 'completed':
+        bg = Colors.green.shade50;
+        fg = Colors.green.shade700;
+        break;
+      case 'pending':
+        bg = Colors.orange.shade50;
+        fg = Colors.orange.shade700;
+        break;
+      case 'cancelled':
+        bg = Colors.red.shade50;
+        fg = Colors.red.shade700;
+        break;
+      default:
+        bg = Colors.blue.shade50;
+        fg = Colors.blue.shade700;
     }
 
     return Container(
@@ -167,6 +154,7 @@ class BookingListItem extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: fg.withOpacity(0.2)),
       ),
       child: Text(
         text,

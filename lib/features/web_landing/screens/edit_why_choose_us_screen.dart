@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 
 // Since the backend for Why Choose Us expects 'iconUrl' but doesn't handle file upload in the controller logic I wrote earlier (CreateItem just takes req.body),
 // I should update the backend controller if I want image upload.
@@ -25,7 +25,7 @@ class EditWhyChooseUsScreen extends ConsumerStatefulWidget {
 }
 
 class _EditWhyChooseUsScreenState extends ConsumerState<EditWhyChooseUsScreen> {
-  final String _baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+  final String _baseUrl = AppConfig.apiUrl;
   List<WhyChooseUsModel> _items = [];
   bool _isLoading = false;
 

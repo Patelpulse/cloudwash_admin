@@ -41,7 +41,7 @@ class SubCategoryCard extends StatelessWidget {
         children: [
           // Image/Header
           Expanded(
-            flex: 3,
+            flex: 5,
             child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
@@ -70,9 +70,9 @@ class SubCategoryCard extends StatelessWidget {
           ),
           // Content
           Expanded(
-            flex: 4,
+            flex: 2,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

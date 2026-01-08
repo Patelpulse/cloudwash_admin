@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_admin/features/cities/widgets/city_table_row.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
@@ -26,7 +26,7 @@ class _CitiesScreenState extends State<CitiesScreen> {
 
   Future<void> _fetchCities() async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response = await http.get(Uri.parse('$baseUrl/cities'));
 
       if (response.statusCode == 200) {
@@ -69,7 +69,7 @@ class _CitiesScreenState extends State<CitiesScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+        final baseUrl = AppConfig.apiUrl;
         final response = await http.delete(Uri.parse('$baseUrl/cities/$id'));
 
         if (response.statusCode == 200) {

@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -30,7 +30,10 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
 
   // State
   String? _selectedCategory;
+  String? _selectedSubCategory;
   List<dynamic> _categories = [];
+  List<dynamic> _subCategories = [];
+  List<dynamic> _filteredSubCategories = [];
   bool _isLoading = false;
   bool _isActive = true;
 
@@ -47,17 +50,21 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
 
   Future<void> _fetchCategories() async {
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final response = await http.get(Uri.parse('$baseUrl/categories'));
+      final subResponse = await http.get(Uri.parse('$baseUrl/sub-categories'));
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && subResponse.statusCode == 200) {
         if (mounted) {
           setState(() {
             _categories = json.decode(response.body);
+            _subCategories = json.decode(subResponse.body);
+
             if (widget.serviceToEdit != null) {
               _initializeEditMode();
             } else if (_categories.isNotEmpty) {
               _selectedCategory = _categories[0]['_id'];
+              _updateFilteredSubCategories();
             }
           });
         }
@@ -65,6 +72,28 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
     } catch (e) {
       debugPrint('Error fetching categories: $e');
     }
+  }
+
+  void _updateFilteredSubCategories() {
+    setState(() {
+      _filteredSubCategories = _subCategories
+          .where((sub) =>
+              (sub['category'] is Map
+                  ? sub['category']['_id']
+                  : sub['category']) ==
+              _selectedCategory)
+          .toList();
+
+      if (_filteredSubCategories.isNotEmpty) {
+        // Only reset if current selection is not in filtered list
+        if (!_filteredSubCategories
+            .any((s) => s['_id'] == _selectedSubCategory)) {
+          _selectedSubCategory = _filteredSubCategories[0]['_id'];
+        }
+      } else {
+        _selectedSubCategory = null;
+      }
+    });
   }
 
   void _initializeEditMode() {
@@ -82,9 +111,20 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
       } else {
         _selectedCategory = s['category'];
       }
+      _updateFilteredSubCategories();
+    }
+
+    if (s['subCategory'] != null) {
+      if (s['subCategory'] is Map) {
+        _selectedSubCategory = s['subCategory']['_id'];
+      } else {
+        _selectedSubCategory = s['subCategory'];
+      }
+
       // Ensure validity
-      if (!_categories.any((c) => c['_id'] == _selectedCategory)) {
-        _selectedCategory = null;
+      if (!_filteredSubCategories
+          .any((s) => s['_id'] == _selectedSubCategory)) {
+        _selectedSubCategory = null;
       }
     }
   }
@@ -128,7 +168,7 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.serviceToEdit != null;
       final url = isEditing
           ? '$baseUrl/services/${widget.serviceToEdit!['_id']}'
@@ -139,6 +179,9 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
 
       request.fields['name'] = _nameController.text;
       request.fields['category'] = _selectedCategory!;
+      if (_selectedSubCategory != null) {
+        request.fields['subCategory'] = _selectedSubCategory!;
+      }
       request.fields['price'] = _priceController.text;
       request.fields['duration'] = _durationController.text;
       request.fields['description'] = _descriptionController.text;
@@ -304,8 +347,12 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
                                       child: Text(cat['name']),
                                     );
                                   }).toList(),
-                                  onChanged: (v) =>
-                                      setState(() => _selectedCategory = v),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      _selectedCategory = v;
+                                      _updateFilteredSubCategories();
+                                    });
+                                  },
                                 ),
                               ),
                             ),
@@ -314,12 +361,57 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
                       ),
                       const SizedBox(width: 24),
                       Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Sub Category',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedSubCategory,
+                                  hint: const Text('Select Sub Category'),
+                                  isExpanded: true,
+                                  items: _filteredSubCategories.map((sub) {
+                                    return DropdownMenuItem<String>(
+                                      value: sub['_id'],
+                                      child: Text(sub['name']),
+                                    );
+                                  }).toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _selectedSubCategory = v),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    children: [
+                      Expanded(
                           child: _buildTextField(
                         controller: _durationController,
                         label: 'Duration (mins)',
                         hint: 'e.g. 60',
                         isNumeric: true,
                       )),
+                      const SizedBox(width: 24),
+                      const Spacer(),
                     ],
                   ),
                   const SizedBox(height: 24),

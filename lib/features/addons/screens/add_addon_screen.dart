@@ -5,9 +5,10 @@ import 'dart:typed_data';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 
 class AddAddonScreen extends StatefulWidget {
@@ -31,18 +32,68 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
   // State
   bool _isLoading = false;
   bool _isActive = true;
-  List<String> _categories = ['Uncategorized'];
-  final TextEditingController _newCategoryController = TextEditingController();
-  File? _selectedImage;
+
+  String? _selectedCategory;
+  String? _selectedSubCategory;
+  List<dynamic> _categories = [];
+  List<dynamic> _subCategories = [];
+  List<dynamic> _filteredSubCategories = [];
+
+  XFile? _selectedImage;
   Uint8List? _webImageBytes;
   String? _existingImageUrl;
 
   @override
   void initState() {
     super.initState();
-    if (widget.addonToEdit != null) {
-      _initializeEditMode();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final baseUrl = AppConfig.apiUrl;
+      final response = await http.get(Uri.parse('$baseUrl/categories'));
+      final subResponse = await http.get(Uri.parse('$baseUrl/sub-categories'));
+
+      if (response.statusCode == 200 && subResponse.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            _categories = json.decode(response.body);
+            _subCategories = json.decode(subResponse.body);
+
+            if (widget.addonToEdit != null) {
+              _initializeEditMode();
+            } else if (_categories.isNotEmpty) {
+              _selectedCategory = _categories[0]['_id'];
+              _updateFilteredSubCategories();
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching categories: $e');
     }
+  }
+
+  void _updateFilteredSubCategories() {
+    setState(() {
+      _filteredSubCategories = _subCategories
+          .where((sub) =>
+              (sub['category'] is Map
+                  ? sub['category']['_id']
+                  : sub['category']) ==
+              _selectedCategory)
+          .toList();
+
+      if (_filteredSubCategories.isNotEmpty) {
+        if (!_filteredSubCategories
+            .any((s) => s['_id'] == _selectedSubCategory)) {
+          _selectedSubCategory = _filteredSubCategories[0]['_id'];
+        }
+      } else {
+        _selectedSubCategory = null;
+      }
+    });
   }
 
   void _initializeEditMode() {
@@ -52,34 +103,30 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
     _priceController.text = addon['price']?.toString() ?? '';
     _durationController.text = addon['duration'] ?? '';
 
-    // Handle categories - can be array or single string
-    if (addon['category'] != null) {
-      if (addon['category'] is List) {
-        _categories = List<String>.from(addon['category']);
-      } else {
-        _categories = [addon['category'].toString()];
-      }
-    }
-
     _isActive = addon['isActive'] == true;
     _existingImageUrl = addon['imageUrl'];
-  }
 
-  void _addCategory() {
-    if (_newCategoryController.text.trim().isNotEmpty) {
-      setState(() {
-        _categories.add(_newCategoryController.text.trim());
-        _newCategoryController.clear();
-      });
-    }
-  }
-
-  void _removeCategory(int index) {
-    setState(() {
-      if (_categories.length > 1) {
-        _categories.removeAt(index);
+    if (addon['category'] != null) {
+      if (addon['category'] is Map) {
+        _selectedCategory = addon['category']['_id'];
+      } else {
+        _selectedCategory = addon['category'];
       }
-    });
+      _updateFilteredSubCategories();
+    }
+
+    if (addon['subCategory'] != null) {
+      if (addon['subCategory'] is Map) {
+        _selectedSubCategory = addon['subCategory']['_id'];
+      } else {
+        _selectedSubCategory = addon['subCategory'];
+      }
+
+      if (!_filteredSubCategories
+          .any((s) => s['_id'] == _selectedSubCategory)) {
+        _selectedSubCategory = null;
+      }
+    }
   }
 
   Future<void> _pickImage() async {
@@ -96,11 +143,11 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
           final bytes = await pickedFile.readAsBytes();
           setState(() {
             _webImageBytes = bytes;
-            _selectedImage = null;
+            _selectedImage = pickedFile;
           });
         } else {
           setState(() {
-            _selectedImage = File(pickedFile.path);
+            _selectedImage = pickedFile;
             _webImageBytes = null;
           });
         }
@@ -117,10 +164,17 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_selectedCategory == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a category')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.addonToEdit != null;
       final url = isEditing
           ? '$baseUrl/addons/${widget.addonToEdit!['_id']}'
@@ -135,23 +189,31 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
       request.fields['description'] = _descriptionController.text;
       request.fields['price'] = _priceController.text;
       request.fields['duration'] = _durationController.text;
-      request.fields['category'] = jsonEncode(_categories);
+      request.fields['category'] = _selectedCategory!;
+      if (_selectedSubCategory != null) {
+        request.fields['subCategory'] = _selectedSubCategory!;
+      }
       request.fields['isActive'] = _isActive.toString();
 
-      // Add image if selected
-      if (kIsWeb && _webImageBytes != null) {
-        request.files.add(http.MultipartFile.fromBytes(
-          'image',
-          _webImageBytes!,
-          filename: 'addon_image.jpg',
-        ));
-      } else if (!kIsWeb && _selectedImage != null) {
-        request.files.add(await http.MultipartFile.fromPath(
-          'image',
-          _selectedImage!.path,
-        ));
+      if (_selectedImage != null) {
+        String mimeType = 'image/jpeg';
+        if (_selectedImage!.path.endsWith('.png')) mimeType = 'image/png';
+
+        if (kIsWeb && _webImageBytes != null) {
+          request.files.add(http.MultipartFile.fromBytes(
+            'image',
+            _webImageBytes!,
+            filename: _selectedImage!.name,
+            contentType: MediaType.parse(mimeType),
+          ));
+        } else {
+          request.files.add(await http.MultipartFile.fromPath(
+            'image',
+            _selectedImage!.path,
+            contentType: MediaType.parse(mimeType),
+          ));
+        }
       } else if (!isEditing) {
-        // Image is required for new addon
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Please select an image')),
@@ -198,7 +260,6 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
     _descriptionController.dispose();
     _priceController.dispose();
     _durationController.dispose();
-    _newCategoryController.dispose();
     super.dispose();
   }
 
@@ -260,6 +321,92 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                   ),
                   const SizedBox(height: 24),
 
+                  // Category & Sub Category
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Category',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedCategory,
+                                  hint: const Text('Select Category'),
+                                  isExpanded: true,
+                                  items: _categories.map((cat) {
+                                    return DropdownMenuItem<String>(
+                                      value: cat['_id'],
+                                      child: Text(cat['name']),
+                                    );
+                                  }).toList(),
+                                  onChanged: (v) {
+                                    setState(() {
+                                      _selectedCategory = v;
+                                      _updateFilteredSubCategories();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Sub Category',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.black87)),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _selectedSubCategory,
+                                  hint: const Text('Select Sub Category'),
+                                  isExpanded: true,
+                                  items: _filteredSubCategories.map((sub) {
+                                    return DropdownMenuItem<String>(
+                                      value: sub['_id'],
+                                      child: Text(sub['name']),
+                                    );
+                                  }).toList(),
+                                  onChanged: (v) =>
+                                      setState(() => _selectedSubCategory = v),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
                   // Description
                   _buildTextField(
                     controller: _descriptionController,
@@ -289,10 +436,6 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-
-                  // Categories
-                  _buildCategoriesSection(),
                   const SizedBox(height: 24),
 
                   // Status Toggle
@@ -386,9 +529,12 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
         child: Image.memory(_webImageBytes!, fit: BoxFit.cover),
       );
     } else if (_selectedImage != null) {
+      if (kIsWeb) {
+        return const Center(child: CircularProgressIndicator());
+      }
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Image.file(_selectedImage!, fit: BoxFit.cover),
+        child: Image.file(File(_selectedImage!.path), fit: BoxFit.cover),
       );
     } else if (_existingImageUrl != null && _existingImageUrl!.isNotEmpty) {
       return ClipRRect(
@@ -406,90 +552,6 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
         ],
       );
     }
-  }
-
-  Widget _buildCategoriesSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Categories',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            Text(
-              '${_categories.length} added',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        // Display existing categories as chips
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _categories.asMap().entries.map((entry) {
-            final index = entry.key;
-            final category = entry.value;
-            return Chip(
-              label: Text(category),
-              deleteIcon: const Icon(Icons.close, size: 18),
-              onDeleted:
-                  _categories.length > 1 ? () => _removeCategory(index) : null,
-              backgroundColor: const Color(0xFFEA8C00).withOpacity(0.1),
-              labelStyle: const TextStyle(color: Color(0xFFEA8C00)),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 12),
-        // Add new category input
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _newCategoryController,
-                decoration: InputDecoration(
-                  hintText: 'Add a category...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                ),
-                onSubmitted: (_) => _addCategory(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _addCategory,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFEA8C00),
-                foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
   }
 
   Widget _buildTextField({

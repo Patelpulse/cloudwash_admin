@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:typed_data';
@@ -32,7 +33,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
   // Use http for simple requests as seen elsewhere, or Dio. I'll use http for file upload consistency with backend
   // Assuming BASE_URL is available via flutter_dotenv or AppConfig
   // For now I'll hardcode or deduce. "http://localhost:5001/api"
-  final String _baseUrl = 'http://localhost:5001/api';
+  final String _baseUrl = AppConfig.apiUrl;
 
   @override
   void initState() {

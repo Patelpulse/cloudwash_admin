@@ -1,77 +1,131 @@
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/features/bookings/screens/booking_details_screen.dart';
 import 'package:cloud_admin/features/bookings/widgets/booking_list_item.dart';
 import 'package:cloud_admin/features/users/widgets/user_stats_card.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
-class BookingsScreen extends StatelessWidget {
+final bookingsStreamProvider =
+    StreamProvider<List<QueryDocumentSnapshot>>((ref) {
+  return FirebaseFirestore.instance
+      .collection('orders')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((event) => event.docs);
+});
+
+class BookingsScreen extends ConsumerWidget {
   const BookingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildStatsRow(context),
-          const SizedBox(height: 32),
-          _buildFilters(context),
-          const SizedBox(height: 32),
-          const Text(
-            'All Bookings (127)',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookingsAsync = ref.watch(bookingsStreamProvider);
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: bookingsAsync.when(
+        data: (docs) {
+          final total = docs.length;
+          final completed = docs
+              .where((doc) => (doc.data() as Map)['status'] == 'completed')
+              .length;
+          final pending = docs
+              .where((doc) => (doc.data() as Map)['status'] == 'pending')
+              .length;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatsRow(context, total, completed, pending),
+                const SizedBox(height: 32),
+                _buildFilters(context),
+                const SizedBox(height: 32),
+                Text(
+                  'All Bookings ($total)',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (docs.isEmpty)
+                  const Center(child: Text("No bookings found"))
+                else
+                  ...docs.map((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    // Extract first service name or default
+                    final services = data['services'] as List?;
+                    final title = (services != null && services.isNotEmpty)
+                        ? services[0]['name']
+                        : 'Service Booking';
+
+                    return BookingListItem(
+                      title: title,
+                      id: '#${data['orderNumber'] ?? doc.id.substring(0, 6)}',
+                      status: data['status'] ?? 'pending',
+                      customer: data['user']?['name'] ?? 'Unknown',
+                      date: data['createdAt'] != null
+                          ? DateFormat('MMM dd, yyyy \u2022 h:mm a')
+                              .format(DateTime.parse(data['createdAt']))
+                          : 'N/A',
+                      amount: '₹${data['priceSummary']?['total'] ?? 0}',
+                      onTap: () {
+                        // Ensure ID is passed for updates
+                        final bookingData = Map<String, dynamic>.from(data);
+                        bookingData['_id'] = doc
+                            .id; // Firestore doc ID usually matches functionality needed
+                        // Note: If backend expects MongoDB _id, it should be in data['_id'] if synced correctly.
+                        // If not, we might need to rely on what's available.
+
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => BookingDetailsScreen(
+                                    booking: bookingData)));
+                      },
+                    );
+                  }),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          const BookingListItem(
-            title: 'Bus Disinfection',
-            id: '#c01084',
-            status: 'Waiting_vendor_response',
-            customer: 'New User',
-            vendor: 'Yogesh Thakur',
-            date: '1/2/2026',
-            amount: '₹1499',
-          ),
-          const BookingListItem(
-            title: 'LAN Cabling',
-            id: '#bff604',
-            status: 'Work_completed',
-            customer: 'New User',
-            vendor: 'Yogesh Sengar',
-            date: '1/2/2026',
-            amount: '₹3750', // Example amount
-          ),
-        ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text('Error: $err')),
       ),
     );
   }
 
-  Widget _buildStatsRow(BuildContext context) {
+  Widget _buildStatsRow(
+      BuildContext context, int total, int completed, int pending) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        // Adapt layout
-        if (width < 800) {
+        int crossAxisCount = 3;
+        if (width < 800) crossAxisCount = 1;
+
+        if (crossAxisCount == 1) {
           return Column(
-            children: const [
+            children: [
               UserStatsCard(
                   label: 'Total Bookings',
-                  value: '127',
+                  value: total.toString(),
                   icon: Icons.calendar_today,
                   color: Colors.blue),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               UserStatsCard(
                   label: 'Completed',
-                  value: '19',
+                  value: completed.toString(),
                   icon: Icons.check_circle,
                   color: AppTheme.successGreen),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               UserStatsCard(
                   label: 'Pending',
-                  value: '25',
+                  value: pending.toString(),
                   icon: Icons.access_time_filled,
                   color: Colors.orange),
             ],
@@ -81,23 +135,23 @@ class BookingsScreen extends StatelessWidget {
         return Row(
           children: [
             Expanded(
-                child: const UserStatsCard(
+                child: UserStatsCard(
                     label: 'Total Bookings',
-                    value: '127',
+                    value: total.toString(),
                     icon: Icons.calendar_today,
                     color: Colors.blue)),
             const SizedBox(width: 16),
             Expanded(
-                child: const UserStatsCard(
+                child: UserStatsCard(
                     label: 'Completed',
-                    value: '19',
+                    value: completed.toString(),
                     icon: Icons.check_circle,
                     color: AppTheme.successGreen)),
             const SizedBox(width: 16),
             Expanded(
-                child: const UserStatsCard(
+                child: UserStatsCard(
                     label: 'Pending',
-                    value: '25',
+                    value: pending.toString(),
                     icon: Icons.access_time_filled,
                     color: Colors.orange)),
           ],
@@ -126,22 +180,16 @@ class BookingsScreen extends StatelessWidget {
                 border: InputBorder.none,
                 icon: Icon(Icons.search, color: Colors.grey),
               ),
+              onChanged: (val) {
+                // Implement search logic later or use local filtering
+              },
             ),
           ),
           const SizedBox(height: 16),
-          Flex(
-            direction: isMobile ? Axis.vertical : Axis.horizontal,
-            children: [
-              Expanded(
-                flex: isMobile ? 0 : 1,
-                child: _buildDropdown(Icons.store, 'All Vendors'),
-              ),
-              SizedBox(width: 16, height: isMobile ? 16 : 0),
-              Expanded(
-                flex: isMobile ? 0 : 1,
-                child: _buildDropdown(Icons.calendar_month, 'All Dates'),
-              ),
-            ],
+          // Keeping date filter only, removing vendor filter as per sentiment
+          SizedBox(
+            width: double.infinity,
+            child: _buildDropdown(Icons.calendar_month, 'All Dates'),
           ),
         ],
       );

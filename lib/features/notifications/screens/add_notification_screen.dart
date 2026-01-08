@@ -1,6 +1,6 @@
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -96,7 +96,7 @@ class _AddNotificationScreenState extends State<AddNotificationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+      final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.notificationToEdit != null;
       final url = isEditing
           ? '$baseUrl/notifications/${widget.notificationToEdit!['_id']}'

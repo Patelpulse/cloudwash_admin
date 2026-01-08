@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:cloud_admin/core/config/app_config.dart';
 
 class EditStatsScreen extends ConsumerStatefulWidget {
   const EditStatsScreen({super.key});
@@ -21,7 +21,7 @@ class _EditStatsScreenState extends ConsumerState<EditStatsScreen> {
 
   bool _isLoading = false;
   bool _isActive = true;
-  final String _baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:5000/api';
+  final String _baseUrl = AppConfig.apiUrl;
 
   @override
   void initState() {

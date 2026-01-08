@@ -8,6 +8,8 @@ class AddonCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final String? imageUrl;
+  final String? category;
+  final String? subCategory;
   // Placeholder color for demo
   final Color placeholderColor;
 
@@ -20,6 +22,8 @@ class AddonCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     this.imageUrl,
+    this.category,
+    this.subCategory,
     required this.placeholderColor,
   });
 
@@ -128,6 +132,18 @@ class AddonCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (category != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '$category${subCategory != null ? ' > $subCategory' : ''}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
