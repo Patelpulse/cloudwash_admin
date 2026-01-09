@@ -19,6 +19,7 @@ import 'package:cloud_admin/features/services/screens/add_service_screen.dart';
 import 'package:cloud_admin/features/services/screens/services_screen.dart';
 import 'package:cloud_admin/features/sub_categories/screens/add_sub_category_screen.dart';
 import 'package:cloud_admin/features/sub_categories/screens/sub_categories_screen.dart';
+import 'package:cloud_admin/features/testimonials/screens/add_testimonial_screen.dart';
 import 'package:cloud_admin/features/testimonials/screens/testimonials_screen.dart';
 import 'package:cloud_admin/features/users/screens/users_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_about_us_screen.dart';
@@ -200,6 +201,17 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
             GoRoute(
               path: '/testimonials',
               builder: (context, state) => const TestimonialsScreen(),
+              routes: [
+                GoRoute(
+                  path: 'add',
+                  builder: (context, state) {
+                    final testimonialToEdit =
+                        state.extra as Map<String, dynamic>?;
+                    return AddTestimonialScreen(
+                        testimonialToEdit: testimonialToEdit);
+                  },
+                ),
+              ],
             ),
             GoRoute(
               path: '/profile',

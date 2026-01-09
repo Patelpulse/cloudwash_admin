@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 import 'package:flutter/material.dart';
 import 'package:cloud_admin/core/config/app_config.dart';
@@ -64,8 +66,76 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = AppConfig.apiUrl;
+      // Step 1: Save to backend first (MongoDB + Cloudinary)
+      // This uploads image to Cloudinary and returns the URL
+      final backendResult = await _saveToBackend();
 
+      if (backendResult == null) {
+        throw Exception('Failed to save to backend');
+      }
+
+      final imageUrl = backendResult['imageUrl'] ?? _existingImageUrl;
+      // final mongoId = backendResult['_id']; // mongoId is not directly used here, but could be if needed
+
+      // Step 2: Save to Firebase Firestore with Cloudinary URL
+      final firebaseService = FirebaseCategoryService();
+
+      if (widget.categoryToEdit != null &&
+          widget.categoryToEdit!['firebaseId'] != null) {
+        // Update existing in Firebase
+        await firebaseService.updateCategory(
+          categoryId: widget.categoryToEdit!['firebaseId'],
+          name: _nameController.text,
+          price: double.tryParse(_priceController.text) ?? 0,
+          description: _descriptionController.text,
+          imageUrl: imageUrl,
+          isActive: _isActive,
+        );
+      } else {
+        // Create new in Firebase
+        await firebaseService.createCategory(
+          name: _nameController.text,
+          price: double.tryParse(_priceController.text) ?? 0,
+          description: _descriptionController.text,
+          imageUrl: imageUrl ?? '',
+          isActive: _isActive,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.categoryToEdit != null
+                ? 'Category updated successfully!'
+                : 'Category created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Upload image to Cloudinary via backend (web compatible) - This method is no longer needed as _saveToBackend handles it
+  // Future<String?> _uploadImageToCloudinary() async {
+  //   // ... (removed as per new logic)
+  // }
+
+  // Save to backend and return response data
+  Future<Map<String, dynamic>?> _saveToBackend() async {
+    try {
+      final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.categoryToEdit != null;
       final url = isEditing
           ? '$baseUrl/categories/${widget.categoryToEdit!['_id']}'
@@ -78,7 +148,12 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       request.fields['price'] = _priceController.text;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
+      // If editing and no new image is selected, send the existing image URL
+      if (isEditing && _selectedImage == null && _existingImageUrl != null) {
+        request.fields['imageUrl'] = _existingImageUrl!;
+      }
 
+      // Add image file if selected
       if (_selectedImage != null) {
         String mimeType = 'image/jpeg';
         if (_selectedImage!.path.endsWith('.png')) {
@@ -107,31 +182,28 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       var response = await request.send();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    isEditing ? 'Category updated!' : 'Category created!')),
-          );
-          context.pop();
+        final responseBody = await response.stream.bytesToString();
+        // Parse JSON response to get imageUrl and _id
+        try {
+          final jsonResponse = json.decode(responseBody);
+          return {
+            'imageUrl':
+                jsonResponse['imageUrl'], // Adjust based on actual response
+            '_id': jsonResponse['_id'], // Adjust based on actual response
+          };
+        } catch (e) {
+          print('Response parse error: $e');
+          return null;
         }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content:
-                    Text('Failed to save category: ${response.statusCode}')),
-          );
-        }
+        final errorBody = await response.stream.bytesToString();
+        print(
+            'Backend save failed with status ${response.statusCode}: $errorBody');
+        return null;
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      print('Backend save error: $e');
+      rethrow;
     }
   }
 

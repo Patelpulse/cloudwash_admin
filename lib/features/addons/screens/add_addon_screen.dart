@@ -1,11 +1,13 @@
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:cloud_admin/core/theme/app_theme.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:cloud_admin/core/services/firebase_addon_service.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
+import 'package:cloud_admin/core/services/firebase_subcategory_service.dart';
 import 'package:cloud_admin/core/config/app_config.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -21,24 +23,25 @@ class AddAddonScreen extends StatefulWidget {
 
 class _AddAddonScreenState extends State<AddAddonScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ImagePicker _picker = ImagePicker();
+  final _firebaseAddonService = FirebaseAddonService();
+  final _firebaseCategoryService = FirebaseCategoryService();
+  final _firebaseSubCategoryService = FirebaseSubCategoryService();
 
   // Controllers
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _priceController = TextEditingController();
-  final _durationController = TextEditingController();
 
   // State
+  String? _selectedCategoryId;
+  String? _selectedSubCategoryId;
+  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _subCategories = [];
+  List<Map<String, dynamic>> _filteredSubCategories = [];
   bool _isLoading = false;
   bool _isActive = true;
 
-  String? _selectedCategory;
-  String? _selectedSubCategory;
-  List<dynamic> _categories = [];
-  List<dynamic> _subCategories = [];
-  List<dynamic> _filteredSubCategories = [];
-
+  // Image
   XFile? _selectedImage;
   Uint8List? _webImageBytes;
   String? _existingImageUrl;
@@ -47,51 +50,52 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
   void initState() {
     super.initState();
     _fetchCategories();
+    _fetchSubCategories();
+    if (widget.addonToEdit != null) {
+      _initializeEditMode();
+    }
   }
 
-  Future<void> _fetchCategories() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/categories'));
-      final subResponse = await http.get(Uri.parse('$baseUrl/sub-categories'));
-
-      if (response.statusCode == 200 && subResponse.statusCode == 200) {
-        if (mounted) {
-          setState(() {
-            _categories = json.decode(response.body);
-            _subCategories = json.decode(subResponse.body);
-
-            if (widget.addonToEdit != null) {
-              _initializeEditMode();
-            } else if (_categories.isNotEmpty) {
-              _selectedCategory = _categories[0]['_id'];
-              _updateFilteredSubCategories();
-            }
-          });
-        }
+  void _fetchCategories() {
+    _firebaseCategoryService.getCategories().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          if (widget.addonToEdit == null &&
+              _selectedCategoryId == null &&
+              _categories.isNotEmpty) {
+            _selectedCategoryId = _categories[0]['id'];
+            _updateFilteredSubCategories();
+          }
+        });
       }
-    } catch (e) {
-      debugPrint('Error fetching categories: $e');
-    }
+    });
+  }
+
+  void _fetchSubCategories() {
+    _firebaseSubCategoryService.getSubCategories().listen((subCategories) {
+      if (mounted) {
+        setState(() {
+          _subCategories = subCategories;
+          _updateFilteredSubCategories();
+        });
+      }
+    });
   }
 
   void _updateFilteredSubCategories() {
     setState(() {
       _filteredSubCategories = _subCategories
-          .where((sub) =>
-              (sub['category'] is Map
-                  ? sub['category']['_id']
-                  : sub['category']) ==
-              _selectedCategory)
+          .where((sub) => sub['categoryId'] == _selectedCategoryId)
           .toList();
 
       if (_filteredSubCategories.isNotEmpty) {
         if (!_filteredSubCategories
-            .any((s) => s['_id'] == _selectedSubCategory)) {
-          _selectedSubCategory = _filteredSubCategories[0]['_id'];
+            .any((s) => s['id'] == _selectedSubCategoryId)) {
+          _selectedSubCategoryId = _filteredSubCategories[0]['id'];
         }
       } else {
-        _selectedSubCategory = null;
+        _selectedSubCategoryId = null;
       }
     });
   }
@@ -101,62 +105,28 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
     _nameController.text = addon['name'] ?? '';
     _descriptionController.text = addon['description'] ?? '';
     _priceController.text = addon['price']?.toString() ?? '';
-    _durationController.text = addon['duration'] ?? '';
-
     _isActive = addon['isActive'] == true;
     _existingImageUrl = addon['imageUrl'];
 
-    if (addon['category'] != null) {
-      if (addon['category'] is Map) {
-        _selectedCategory = addon['category']['_id'];
-      } else {
-        _selectedCategory = addon['category'];
-      }
-      _updateFilteredSubCategories();
-    }
-
-    if (addon['subCategory'] != null) {
-      if (addon['subCategory'] is Map) {
-        _selectedSubCategory = addon['subCategory']['_id'];
-      } else {
-        _selectedSubCategory = addon['subCategory'];
-      }
-
-      if (!_filteredSubCategories
-          .any((s) => s['_id'] == _selectedSubCategory)) {
-        _selectedSubCategory = null;
-      }
-    }
+    _selectedCategoryId = addon['categoryId'];
+    _selectedSubCategoryId = addon['subCategoryId'];
   }
 
   Future<void> _pickImage() async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
-
-      if (pickedFile != null) {
-        if (kIsWeb) {
-          final bytes = await pickedFile.readAsBytes();
-          setState(() {
-            _webImageBytes = bytes;
-            _selectedImage = pickedFile;
-          });
-        } else {
-          setState(() {
-            _selectedImage = pickedFile;
-            _webImageBytes = null;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking image: $e')),
-        );
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      if (kIsWeb) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _selectedImage = image;
+          _webImageBytes = bytes;
+        });
+      } else {
+        setState(() {
+          _selectedImage = image;
+          _webImageBytes = null;
+        });
       }
     }
   }
@@ -164,35 +134,87 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedCategory == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a category')),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
 
     try {
+      String? imageUrl = _existingImageUrl;
+
+      // Try to upload image to backend/Cloudinary if selected
+      if (_selectedImage != null) {
+        try {
+          final backendResult = await _saveToBackend();
+          if (backendResult != null && backendResult['imageUrl'] != null) {
+            imageUrl = backendResult['imageUrl'];
+          }
+        } catch (e) {
+          debugPrint('Backend upload failed: $e');
+          // Continue without image - save to Firebase anyway
+        }
+      }
+
+      // Save to Firebase Firestore
+      if (widget.addonToEdit != null &&
+          widget.addonToEdit!['firebaseId'] != null) {
+        // Update existing in Firebase
+        await _firebaseAddonService.updateAddon(
+          addonId: widget.addonToEdit!['firebaseId'],
+          name: _nameController.text,
+          description: _descriptionController.text,
+          price: double.tryParse(_priceController.text) ?? 0,
+          imageUrl: imageUrl,
+          isActive: _isActive,
+        );
+      } else {
+        // Create new in Firebase
+        await _firebaseAddonService.createAddon(
+          name: _nameController.text,
+          description: _descriptionController.text,
+          price: double.tryParse(_priceController.text) ?? 0,
+          imageUrl: imageUrl ?? '',
+          isActive: _isActive,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.addonToEdit != null
+                ? 'Add-on updated successfully!'
+                : 'Add-on created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _saveToBackend() async {
+    try {
       final baseUrl = AppConfig.apiUrl;
-      final isEditing = widget.addonToEdit != null;
+      final isEditing =
+          widget.addonToEdit != null && widget.addonToEdit!['_id'] != null;
       final url = isEditing
           ? '$baseUrl/addons/${widget.addonToEdit!['_id']}'
           : '$baseUrl/addons';
 
-      var request = http.MultipartRequest(
-        isEditing ? 'PUT' : 'POST',
-        Uri.parse(url),
-      );
+      var uri = Uri.parse(url);
+      var request = http.MultipartRequest(isEditing ? 'PUT' : 'POST', uri);
 
       request.fields['name'] = _nameController.text;
       request.fields['description'] = _descriptionController.text;
       request.fields['price'] = _priceController.text;
-      request.fields['duration'] = _durationController.text;
-      request.fields['category'] = _selectedCategory!;
-      if (_selectedSubCategory != null) {
-        request.fields['subCategory'] = _selectedSubCategory!;
-      }
       request.fields['isActive'] = _isActive.toString();
 
       if (_selectedImage != null) {
@@ -213,44 +235,29 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
             contentType: MediaType.parse(mimeType),
           ));
         }
-      } else if (!isEditing) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please select an image')),
-          );
-        }
-        setState(() => _isLoading = false);
-        return;
       }
 
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
+      var response = await request.send();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(isEditing ? 'Addon updated!' : 'Addon created!')),
-          );
-          context.pop();
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content:
-                    Text('Failed: ${response.statusCode} - ${responseBody}')),
-          );
+        final responseBody = await response.stream.bytesToString();
+        try {
+          final jsonResponse = json.decode(responseBody);
+          return {
+            'imageUrl': jsonResponse['imageUrl'],
+            '_id': jsonResponse['_id'],
+          };
+        } catch (e) {
+          return {
+            'imageUrl': _existingImageUrl,
+            '_id': widget.addonToEdit?['_id'],
+          };
         }
       }
+      return null;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('Backend save error: $e');
+      rethrow;
     }
   }
 
@@ -259,7 +266,6 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _durationController.dispose();
     super.dispose();
   }
 
@@ -282,7 +288,7 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  isEditing ? 'Edit Add-on' : 'Create New Add-on',
+                  isEditing ? 'Edit Add-on' : 'Add New Add-on',
                   style: const TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -313,22 +319,35 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                           fontSize: 18, fontWeight: FontWeight.bold)),
                   const Divider(height: 32),
 
-                  // Name
-                  _buildTextField(
-                    controller: _nameController,
-                    label: 'Add-on Name',
-                    hint: 'e.g. Smart Curtain Setup - 1200',
+                  // Name and Price
+                  Row(
+                    children: [
+                      Expanded(
+                          child: _buildTextField(
+                        controller: _nameController,
+                        label: 'Add-on Name',
+                        hint: 'e.g. Stain Protection',
+                      )),
+                      const SizedBox(width: 24),
+                      Expanded(
+                          child: _buildTextField(
+                        controller: _priceController,
+                        label: 'Price (₹)',
+                        hint: 'e.g. 99',
+                        isNumeric: true,
+                      )),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
-                  // Category & Sub Category
+                  // Category and Sub-Category Dropdowns
                   Row(
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Category',
+                            const Text('Category (Optional)',
                                 style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -344,18 +363,21 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                               ),
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
-                                  value: _selectedCategory,
+                                  value: _categories.any((cat) =>
+                                          cat['id'] == _selectedCategoryId)
+                                      ? _selectedCategoryId
+                                      : null,
                                   hint: const Text('Select Category'),
                                   isExpanded: true,
                                   items: _categories.map((cat) {
                                     return DropdownMenuItem<String>(
-                                      value: cat['_id'],
+                                      value: cat['id'],
                                       child: Text(cat['name']),
                                     );
                                   }).toList(),
                                   onChanged: (v) {
                                     setState(() {
-                                      _selectedCategory = v;
+                                      _selectedCategoryId = v;
                                       _updateFilteredSubCategories();
                                     });
                                   },
@@ -365,12 +387,12 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 24),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Sub Category',
+                            const Text('Sub Category (Optional)',
                                 style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -386,17 +408,20 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                               ),
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
-                                  value: _selectedSubCategory,
+                                  value: _filteredSubCategories.any((sub) =>
+                                          sub['id'] == _selectedSubCategoryId)
+                                      ? _selectedSubCategoryId
+                                      : null,
                                   hint: const Text('Select Sub Category'),
                                   isExpanded: true,
                                   items: _filteredSubCategories.map((sub) {
                                     return DropdownMenuItem<String>(
-                                      value: sub['_id'],
+                                      value: sub['id'],
                                       child: Text(sub['name']),
                                     );
                                   }).toList(),
-                                  onChanged: (v) =>
-                                      setState(() => _selectedSubCategory = v),
+                                  onChanged: (v) => setState(
+                                      () => _selectedSubCategoryId = v),
                                 ),
                               ),
                             ),
@@ -411,30 +436,8 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                   _buildTextField(
                     controller: _descriptionController,
                     label: 'Description',
-                    hint: 'Brief description of the add-on',
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 24),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildTextField(
-                          controller: _priceController,
-                          label: 'Price (₹)',
-                          hint: 'e.g. 1200',
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _buildTextField(
-                          controller: _durationController,
-                          label: 'Duration',
-                          hint: 'e.g. 30 min',
-                        ),
-                      ),
-                    ],
+                    hint: 'Detailed description of the add-on...',
+                    maxLines: 4,
                   ),
                   const SizedBox(height: 24),
 
@@ -447,37 +450,68 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
                       Switch(
                           value: _isActive,
                           onChanged: (v) => setState(() => _isActive = v),
-                          activeColor: AppTheme.successGreen),
+                          activeTrackColor: AppTheme.successGreen),
                       Text(_isActive ? ' Active' : ' Inactive'),
                     ],
                   ),
-
-                  const SizedBox(height: 32),
-                  const Divider(),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
                   // Image Upload
                   const Text('Add-on Image',
                       style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
                   GestureDetector(
                     onTap: _pickImage,
                     child: Container(
-                      height: 200,
+                      height: 150,
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
+                        color: Colors.grey.shade50,
+                        border: Border.all(
+                            color: Colors.grey.shade300,
+                            style: BorderStyle.solid),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: _buildImagePreview(),
+                      child: _selectedImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: kIsWeb
+                                  ? (_webImageBytes != null
+                                      ? Image.memory(_webImageBytes!,
+                                          fit: BoxFit.cover)
+                                      : const Center(
+                                          child: CircularProgressIndicator()))
+                                  : Image.file(File(_selectedImage!.path),
+                                      fit: BoxFit.cover),
+                            )
+                          : (_existingImageUrl != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    _existingImageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (ctx, err, stack) =>
+                                        const Center(
+                                            child: Icon(Icons.broken_image)),
+                                  ),
+                                )
+                              : Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.cloud_upload_outlined,
+                                          size: 40,
+                                          color: AppTheme.primaryBlue),
+                                      const SizedBox(height: 8),
+                                      Text('Click to upload image',
+                                          style: TextStyle(
+                                              color: Colors.grey.shade600)),
+                                    ],
+                                  ),
+                                )),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text('Click to upload image',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade600)),
 
                   const SizedBox(height: 40),
                   Row(
@@ -522,45 +556,12 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
     );
   }
 
-  Widget _buildImagePreview() {
-    if (_webImageBytes != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.memory(_webImageBytes!, fit: BoxFit.cover),
-      );
-    } else if (_selectedImage != null) {
-      if (kIsWeb) {
-        return const Center(child: CircularProgressIndicator());
-      }
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.file(File(_selectedImage!.path), fit: BoxFit.cover),
-      );
-    } else if (_existingImageUrl != null && _existingImageUrl!.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(_existingImageUrl!, fit: BoxFit.cover),
-      );
-    } else {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.cloud_upload, size: 48, color: Colors.grey.shade400),
-          const SizedBox(height: 8),
-          Text('Upload Add-on Image',
-              style: TextStyle(color: Colors.grey.shade600)),
-        ],
-      );
-    }
-  }
-
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required String hint,
     int maxLines = 1,
-    TextInputType? keyboardType,
-    bool required = true,
+    bool isNumeric = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -574,11 +575,9 @@ class _AddAddonScreenState extends State<AddAddonScreen> {
         TextFormField(
           controller: controller,
           maxLines: maxLines,
-          keyboardType: keyboardType,
+          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) {
-            if (required && (value == null || value.isEmpty)) {
-              return 'Required';
-            }
+            if (value == null || value.isEmpty) return 'Required';
             return null;
           },
           decoration: InputDecoration(

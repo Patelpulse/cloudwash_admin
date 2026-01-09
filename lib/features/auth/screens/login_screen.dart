@@ -106,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Admin Login',
+                  'Admin Login (v2.0 - Firebase)',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,

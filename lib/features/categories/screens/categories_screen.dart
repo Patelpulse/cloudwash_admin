@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
 import 'package:cloud_admin/features/categories/widgets/category_card.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -14,41 +12,9 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  List<dynamic> _categories = [];
-  bool _isLoading = true;
-  String? _error;
+  final _firebaseService = FirebaseCategoryService();
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchCategories();
-  }
-
-  Future<void> _fetchCategories() async {
-    try {
-      final apiUrl = dotenv.env['API_URL'];
-      final response = await http.get(Uri.parse('$apiUrl/categories'));
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _categories = json.decode(response.body);
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _error = 'Failed to load categories';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteCategory(String id) async {
+  Future<void> _deleteCategory(String firebaseId, String? mongoId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -69,31 +35,30 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     );
 
     if (confirmed == true) {
-      setState(() => _isLoading = true);
       try {
-        final apiUrl = dotenv.env['API_URL'];
-        final response = await http.delete(Uri.parse('$apiUrl/categories/$id'));
+        // Delete from Firebase
+        await _firebaseService.deleteCategory(firebaseId);
 
-        if (response.statusCode == 200) {
-          // Refresh list
-          _fetchCategories();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Category deleted successfully')),
-            );
-          }
-        } else {
-          setState(() => _isLoading = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Failed to delete: ${response.statusCode}')));
-          }
-        }
-      } catch (e) {
-        setState(() => _isLoading = false);
+        // TODO: Also delete from MongoDB backend if needed
+        // if (mongoId != null) {
+        //   await http.delete(Uri.parse('$apiUrl/categories/$mongoId'));
+        // }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            const SnackBar(
+              content: Text('Category deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting category: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -102,14 +67,6 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_error != null) {
-      return Center(child: Text('Error: $_error'));
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -126,12 +83,39 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   color: AppTheme.primaryBlue,
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  setState(() => _isLoading = true);
-                  _fetchCategories();
-                },
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_done,
+                            size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Firebase',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.refresh, size: 20, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  const Text('Auto-refresh',
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
               ),
             ],
           ),
@@ -139,7 +123,6 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           ElevatedButton.icon(
             onPressed: () async {
               await context.push('/categories/add');
-              _fetchCategories();
             },
             icon: const Icon(
               Icons.add,
@@ -156,17 +139,75 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          _buildCategoryGrid(context),
+          _buildCategoryStream(context),
         ],
       ),
     );
   }
 
-  Widget _buildCategoryGrid(BuildContext context) {
-    if (_categories.isEmpty) {
-      return const Center(child: Text('No categories found.'));
-    }
+  Widget _buildCategoryStream(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseService.getCategories(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
 
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {}); // Rebuild to retry
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final categories = snapshot.data ?? [];
+
+        if (categories.isEmpty) {
+          return Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.category_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'No categories found',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add your first category to get started',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return _buildCategoryGrid(context, categories);
+      },
+    );
+  }
+
+  Widget _buildCategoryGrid(
+      BuildContext context, List<Map<String, dynamic>> categories) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -193,9 +234,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             mainAxisSpacing: 24,
             childAspectRatio: childAspectRatio,
           ),
-          itemCount: _categories.length,
+          itemCount: categories.length,
           itemBuilder: (context, index) {
-            final cat = _categories[index];
+            final cat = categories[index];
             return CategoryCard(
               title: cat['name'] ?? 'Untitled',
               description: cat['description'] ?? 'No description',
@@ -204,10 +245,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               imageUrl: cat['imageUrl'],
               placeholderColor: Colors.grey.shade200,
               onEdit: () async {
-                await context.push('/categories/add', extra: cat);
-                _fetchCategories();
+                // Pass both Firebase ID and data
+                final editData = {
+                  ...cat,
+                  'firebaseId': cat['id'], // Firebase ID
+                };
+                await context.push('/categories/add', extra: editData);
               },
-              onDelete: () => _deleteCategory(cat['_id']),
+              onDelete: () => _deleteCategory(cat['id'], cat['mongoId']),
               onViewSubCategories: () =>
                   context.go('/sub-categories', extra: cat['name']),
             );

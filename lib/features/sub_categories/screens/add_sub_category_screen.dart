@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
-import 'package:flutter/foundation.dart'; // For kIsWeb
-import 'package:flutter/material.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
+import 'package:cloud_admin/core/services/firebase_subcategory_service.dart';
 import 'package:cloud_admin/core/config/app_config.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -19,16 +21,17 @@ class AddSubCategoryScreen extends StatefulWidget {
 
 class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _firebaseCategoryService = FirebaseCategoryService();
+  final _firebaseSubCategoryService = FirebaseSubCategoryService();
 
   // Controllers
   final _nameController = TextEditingController();
-  final _priceController = TextEditingController();
   final _descriptionController = TextEditingController();
 
   // State variables
   bool _isActive = true;
-  String? _selectedCategory;
-  List<dynamic> _categories = [];
+  String? _selectedCategoryId;
+  List<Map<String, dynamic>> _categories = [];
   bool _isLoading = false;
 
   // Image handling
@@ -40,51 +43,37 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
   void initState() {
     super.initState();
     _fetchCategories();
+    if (widget.subCategoryToEdit != null) {
+      _initializeEditMode();
+    }
   }
 
-  Future<void> _fetchCategories() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/categories'));
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          setState(() {
-            _categories = json.decode(response.body);
-            // If editing, set initial values
-            if (widget.subCategoryToEdit != null) {
-              _initializeEditMode();
-            } else if (_categories.isNotEmpty) {
-              _selectedCategory = _categories[0]['_id'];
-            }
-          });
-        }
+  void _fetchCategories() {
+    // Listen to Firebase categories stream
+    _firebaseCategoryService.getCategories().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          // Set initial selection if not editing
+          if (widget.subCategoryToEdit == null &&
+              _categories.isNotEmpty &&
+              _selectedCategoryId == null) {
+            _selectedCategoryId = _categories[0]['id'];
+          }
+        });
       }
-    } catch (e) {
-      debugPrint('Error fetching categories: $e');
-    }
+    });
   }
 
   void _initializeEditMode() {
     final sub = widget.subCategoryToEdit!;
     _nameController.text = sub['name'] ?? '';
-    _priceController.text = sub['price']?.toString() ?? '';
     _descriptionController.text = sub['description'] ?? '';
     _isActive = sub['isActive'] == true;
     _existingImageUrl = sub['imageUrl'];
 
-    // Set parent category
-    if (sub['category'] != null) {
-      if (sub['category'] is Map) {
-        _selectedCategory = sub['category']['_id'];
-      } else {
-        _selectedCategory = sub['category'];
-      }
-      // Ensure the selected category exists in the list (it should)
-      if (!_categories.any((c) => c['_id'] == _selectedCategory)) {
-        _selectedCategory = null;
-      }
-    }
+    // Set parent category ID
+    _selectedCategoryId = sub['categoryId'];
   }
 
   Future<void> _pickImage() async {
@@ -109,16 +98,9 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedCategory == null) {
+    if (_selectedCategoryId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a parent category')),
-      );
-      return;
-    }
-
-    if (widget.subCategoryToEdit == null && _selectedImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an image')),
       );
       return;
     }
@@ -126,8 +108,74 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
     setState(() => _isLoading = true);
 
     try {
+      String? imageUrl = _existingImageUrl;
+
+      // Try to upload image to backend/Cloudinary if selected
+      if (_selectedImage != null) {
+        try {
+          final backendResult = await _saveToBackend();
+          if (backendResult != null && backendResult['imageUrl'] != null) {
+            imageUrl = backendResult['imageUrl'];
+          }
+        } catch (e) {
+          debugPrint('Backend upload failed: $e');
+          // Continue without image - save to Firebase anyway
+        }
+      }
+
+      // Step 2: Save to Firebase Firestore
+      if (widget.subCategoryToEdit != null &&
+          widget.subCategoryToEdit!['firebaseId'] != null) {
+        // Update existing in Firebase
+        await _firebaseSubCategoryService.updateSubCategory(
+          subCategoryId: widget.subCategoryToEdit!['firebaseId'],
+          name: _nameController.text,
+          categoryId: _selectedCategoryId!,
+          description: _descriptionController.text,
+          imageUrl: imageUrl,
+          isActive: _isActive,
+        );
+      } else {
+        // Create new in Firebase
+        await _firebaseSubCategoryService.createSubCategory(
+          name: _nameController.text,
+          categoryId: _selectedCategoryId!,
+          description: _descriptionController.text,
+          imageUrl: imageUrl ?? '',
+          isActive: _isActive,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.subCategoryToEdit != null
+                ? 'Sub-Category updated successfully!'
+                : 'Sub-Category created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<Map<String, dynamic>?> _saveToBackend() async {
+    try {
       final baseUrl = AppConfig.apiUrl;
-      final isEditing = widget.subCategoryToEdit != null;
+      final isEditing = widget.subCategoryToEdit != null &&
+          widget.subCategoryToEdit!['_id'] != null;
 
       final url = isEditing
           ? '$baseUrl/sub-categories/${widget.subCategoryToEdit!['_id']}'
@@ -137,8 +185,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
       var request = http.MultipartRequest(isEditing ? 'PUT' : 'POST', uri);
 
       request.fields['name'] = _nameController.text;
-      request.fields['category'] = _selectedCategory!;
-      request.fields['price'] = _priceController.text;
+      request.fields['category'] = _selectedCategoryId!;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
 
@@ -165,37 +212,31 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
       var response = await request.send();
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(isEditing
-                    ? 'Sub-Category updated!'
-                    : 'Sub-Category created!')),
-          );
-          context.pop();
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed: ${response.statusCode}')),
-          );
+        final responseBody = await response.stream.bytesToString();
+        // Try to parse response for image URL
+        try {
+          final jsonResponse = json.decode(responseBody);
+          return {
+            'imageUrl': jsonResponse['imageUrl'],
+            '_id': jsonResponse['_id'],
+          };
+        } catch (e) {
+          return {
+            'imageUrl': _existingImageUrl,
+            '_id': widget.subCategoryToEdit?['_id'],
+          };
         }
       }
+      return null;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('Backend save error: $e');
+      rethrow;
     }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _priceController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
@@ -266,38 +307,29 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: _selectedCategory,
+                        value: _categories
+                                .any((cat) => cat['id'] == _selectedCategoryId)
+                            ? _selectedCategoryId
+                            : null,
                         hint: const Text('Select Parent Category'),
                         isExpanded: true,
                         items: _categories.map((cat) {
                           return DropdownMenuItem<String>(
-                            value: cat['_id'],
+                            value: cat['id'],
                             child: Text(cat['name']),
                           );
                         }).toList(),
-                        onChanged: (v) => setState(() => _selectedCategory = v),
+                        onChanged: (v) =>
+                            setState(() => _selectedCategoryId = v),
                       ),
                     ),
                   ),
                   const SizedBox(height: 24),
 
-                  Row(
-                    children: [
-                      Expanded(
-                          child: _buildTextField(
-                        controller: _nameController,
-                        label: 'Sub-Category Name',
-                        hint: 'e.g. Sofa Cleaning',
-                      )),
-                      const SizedBox(width: 24),
-                      Expanded(
-                          child: _buildTextField(
-                        controller: _priceController,
-                        label: 'Price/Rate Info',
-                        hint: 'e.g. 299',
-                        isNumeric: true,
-                      )),
-                    ],
+                  _buildTextField(
+                    controller: _nameController,
+                    label: 'Sub-Category Name',
+                    hint: 'e.g. Sofa Cleaning',
                   ),
                   const SizedBox(height: 24),
 
@@ -318,7 +350,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
                       Switch(
                           value: _isActive,
                           onChanged: (v) => setState(() => _isActive = v),
-                          activeColor: AppTheme.successGreen),
+                          activeTrackColor: AppTheme.successGreen),
                       Text(_isActive ? ' Active' : ' Inactive'),
                     ],
                   ),
@@ -429,7 +461,6 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
     required String label,
     required String hint,
     int maxLines = 1,
-    bool isNumeric = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,7 +474,6 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
         TextFormField(
           controller: controller,
           maxLines: maxLines,
-          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) {
             if (value == null || value.isEmpty) return 'Required';
             return null;

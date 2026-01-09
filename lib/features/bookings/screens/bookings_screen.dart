@@ -9,19 +9,145 @@ import 'package:intl/intl.dart';
 
 final bookingsStreamProvider =
     StreamProvider<List<QueryDocumentSnapshot>>((ref) {
+  // Query all orders from all users using collection group
+  // This gets orders from: users/{userId}/orders/{orderId}
   return FirebaseFirestore.instance
-      .collection('orders')
+      .collectionGroup('orders') // ✅ Gets orders from ALL users
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map((event) => event.docs);
 });
 
-class BookingsScreen extends ConsumerWidget {
+class BookingsScreen extends ConsumerStatefulWidget {
   const BookingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BookingsScreen> createState() => _BookingsScreenState();
+}
+
+class _BookingsScreenState extends ConsumerState<BookingsScreen> {
+  bool _isFirstLoad = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize seen orders on first load
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _isFirstLoad = false);
+      }
+    });
+  }
+
+  void _showNewBookingPopup(Map<String, dynamic> data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.notifications_active,
+                  color: Colors.green.shade700, size: 28),
+            ),
+            const SizedBox(width: 12),
+            const Text('🔔 New Booking!', style: TextStyle(fontSize: 20)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Order #${data['orderNumber'] ?? 'N/A'}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text('Customer: ${data['user']?['name'] ?? 'Unknown'}'),
+            Text('Phone: ${data['user']?['phone'] ?? 'N/A'}'),
+            const SizedBox(height: 8),
+            Text(
+              'Amount: ₹${data['priceSummary']?['total'] ?? 0}',
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Dismiss'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Auto-scroll or focus on the new booking
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E88E5)),
+            child: const Text('View Order'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _playNotificationSound() {
+    // Play browser notification sound
+    // For web, we can use the Web Audio API through JS interop
+    // For now, we'll use the HTML5 audio element via the browser
+    try {
+      // This will attempt to play the default notification sound
+      // You can add a custom sound file to your assets and play it
+      print('🔊 Playing notification sound...');
+      // TODO: Add audio player package and custom sound
+    } catch (e) {
+      print('Could not play sound: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final bookingsAsync = ref.watch(bookingsStreamProvider);
+
+    // Listen for new bookings (runs outside build phase)
+    ref.listen<AsyncValue<List<QueryDocumentSnapshot>>>(
+      bookingsStreamProvider,
+      (previous, next) {
+        if (next is AsyncData && previous is AsyncData) {
+          final newDocs = (next as AsyncData).value ?? [];
+          final oldDocs = (previous as AsyncData).value ?? [];
+
+          // Check if there's a new booking at the top
+          if (newDocs.isNotEmpty && oldDocs.isNotEmpty && !_isFirstLoad) {
+            if (newDocs.first.id != oldDocs.first.id) {
+              // New booking detected!
+              final data = newDocs.first.data() as Map<String, dynamic>;
+              Future.microtask(() {
+                if (mounted) {
+                  _showNewBookingPopup(data);
+                  _playNotificationSound();
+                }
+              });
+            }
+          }
+        }
+
+        // Mark first load complete after data arrives
+        if (_isFirstLoad && next is AsyncData) {
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) setState(() => _isFirstLoad = false);
+          });
+        }
+      },
+    );
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -70,8 +196,7 @@ class BookingsScreen extends ConsumerWidget {
                       status: data['status'] ?? 'pending',
                       customer: data['user']?['name'] ?? 'Unknown',
                       date: data['createdAt'] != null
-                          ? DateFormat('MMM dd, yyyy \u2022 h:mm a')
-                              .format(DateTime.parse(data['createdAt']))
+                          ? _formatDate(data['createdAt'])
                           : 'N/A',
                       amount: '₹${data['priceSummary']?['total'] ?? 0}',
                       onTap: () {
@@ -162,9 +287,6 @@ class BookingsScreen extends ConsumerWidget {
 
   Widget _buildFilters(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      final width = constraints.maxWidth;
-      final isMobile = width < 600;
-
       return Column(
         children: [
           Container(
@@ -218,5 +340,23 @@ class BookingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _formatDate(dynamic value) {
+    DateTime? dateTime;
+    if (value is Timestamp) {
+      dateTime = value.toDate();
+    } else if (value is String) {
+      dateTime = DateTime.tryParse(value);
+    } else if (value is Map && value.containsKey('_seconds')) {
+      final seconds = value['_seconds'] as int;
+      final nanoseconds = value['_nanoseconds'] as int? ?? 0;
+      dateTime = DateTime.fromMillisecondsSinceEpoch(
+        seconds * 1000 + (nanoseconds / 1000000).floor(),
+      );
+    }
+    return dateTime != null
+        ? DateFormat('MMM dd, yyyy • h:mm a').format(dateTime)
+        : 'N/A';
   }
 }

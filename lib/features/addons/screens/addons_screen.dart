@@ -1,10 +1,7 @@
-import 'dart:convert';
-
+import 'package:cloud_admin/core/services/firebase_addon_service.dart';
 import 'package:cloud_admin/features/addons/widgets/addon_card.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class AddonsScreen extends StatefulWidget {
   const AddonsScreen({super.key});
@@ -14,41 +11,9 @@ class AddonsScreen extends StatefulWidget {
 }
 
 class _AddonsScreenState extends State<AddonsScreen> {
-  List<dynamic> _addons = [];
-  bool _isLoading = true;
-  String _errorMessage = '';
+  final _firebaseAddonService = FirebaseAddonService();
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchAddons();
-  }
-
-  Future<void> _fetchAddons() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/addons'));
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _addons = json.decode(response.body);
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to load addons';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteAddon(String id) async {
+  Future<void> _deleteAddon(String firebaseId, String? mongoId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -69,27 +34,23 @@ class _AddonsScreenState extends State<AddonsScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = AppConfig.apiUrl;
-        final response = await http.delete(Uri.parse('$baseUrl/addons/$id'));
+        await _firebaseAddonService.deleteAddon(firebaseId);
 
-        if (response.statusCode == 200) {
-          _fetchAddons(); // Refresh list
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Add-on deleted successfully')),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to delete add-on')),
-            );
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Add-on deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -98,33 +59,54 @@ class _AddonsScreenState extends State<AddonsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(child: Text(_errorMessage));
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Service Add-ons',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Service Add-ons',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.cloud_done,
+                        size: 16, color: Colors.green.shade700),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Firebase',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           // Orange Header/Button Bar
           InkWell(
             onTap: () async {
               await context.push('/addons/add');
-              _fetchAddons();
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -132,8 +114,8 @@ class _AddonsScreenState extends State<AddonsScreen> {
                 color: const Color(0xFFEA8C00), // Orange color
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                children: const [
+              child: const Row(
+                children: [
                   Icon(Icons.add, color: Colors.white, size: 20),
                   SizedBox(width: 8),
                   Text(
@@ -147,33 +129,6 @@ class _AddonsScreenState extends State<AddonsScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          // Filter Section
-          const Text(
-            'Filter by Category:',
-            style: TextStyle(
-                color: Colors.blueGrey,
-                fontSize: 13,
-                fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text('All Categories',
-                    style: TextStyle(fontWeight: FontWeight.w500)),
-                Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-              ],
-            ),
-          ),
           const SizedBox(height: 24),
           const Text(
             'All Add-ons',
@@ -185,22 +140,76 @@ class _AddonsScreenState extends State<AddonsScreen> {
           ),
           const Divider(thickness: 1, color: Color(0xFFFFF7ED)),
           const SizedBox(height: 16),
-          _buildGrid(context),
+          _buildAddonsStream(),
         ],
       ),
     );
   }
 
-  Widget _buildGrid(BuildContext context) {
-    if (_addons.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32.0),
-          child: Text('No add-ons found. Click "New Add-on" to create one.'),
-        ),
-      );
-    }
+  Widget _buildAddonsStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseAddonService.getAddons(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFEA8C00)),
+              ),
+            ),
+          );
+        }
 
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final addons = snapshot.data ?? [];
+
+        if (addons.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32.0),
+              child: Column(
+                children: [
+                  Icon(Icons.extension_outlined,
+                      size: 64, color: Colors.grey.shade300),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No add-ons found',
+                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Click "New Add-on" to create one',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return _buildGrid(context, addons);
+      },
+    );
+  }
+
+  Widget _buildGrid(BuildContext context, List<Map<String, dynamic>> addons) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -222,32 +231,27 @@ class _AddonsScreenState extends State<AddonsScreen> {
             mainAxisSpacing: 24,
             childAspectRatio: childAspectRatio,
           ),
-          itemCount: _addons.length,
+          itemCount: addons.length,
           itemBuilder: (context, index) {
-            final addon = _addons[index];
-            final catName =
-                (addon['category'] != null && addon['category'] is Map)
-                    ? addon['category']['name']
-                    : null;
-            final subCatName =
-                (addon['subCategory'] != null && addon['subCategory'] is Map)
-                    ? addon['subCategory']['name']
-                    : null;
+            final addon = addons[index];
 
             return AddonCard(
               title: addon['name'] ?? 'No Name',
               description: addon['description'] ?? '',
-              price: '₹${addon['price']}',
-              duration: addon['duration'] ?? '',
+              price: '₹${addon['price'] ?? 0}',
+              duration: '', // Not stored in addons
               imageUrl: addon['imageUrl'],
-              category: catName,
-              subCategory: subCatName,
+              category: null, // Not linked to category in current structure
+              subCategory: null,
               placeholderColor: Colors.grey.shade800,
               onEdit: () async {
-                await context.push('/addons/add', extra: addon);
-                _fetchAddons();
+                final editData = {
+                  ...addon,
+                  'firebaseId': addon['id'],
+                };
+                await context.push('/addons/add', extra: editData);
               },
-              onDelete: () => _deleteAddon(addon['_id']),
+              onDelete: () => _deleteAddon(addon['id'], addon['mongoId']),
             );
           },
         );

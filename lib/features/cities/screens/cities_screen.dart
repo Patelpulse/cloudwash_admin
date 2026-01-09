@@ -1,10 +1,7 @@
-import 'dart:convert';
-
+import 'package:cloud_admin/core/services/firebase_city_service.dart';
 import 'package:cloud_admin/features/cities/widgets/city_table_row.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class CitiesScreen extends StatefulWidget {
   const CitiesScreen({super.key});
@@ -14,41 +11,9 @@ class CitiesScreen extends StatefulWidget {
 }
 
 class _CitiesScreenState extends State<CitiesScreen> {
-  List<dynamic> _cities = [];
-  bool _isLoading = true;
-  String _errorMessage = '';
+  final _firebaseCityService = FirebaseCityService();
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchCities();
-  }
-
-  Future<void> _fetchCities() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/cities'));
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _cities = json.decode(response.body);
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to load cities';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteCity(String id) async {
+  Future<void> _deleteCity(String firebaseId, String? mongoId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -69,27 +34,23 @@ class _CitiesScreenState extends State<CitiesScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = AppConfig.apiUrl;
-        final response = await http.delete(Uri.parse('$baseUrl/cities/$id'));
+        await _firebaseCityService.deleteCity(firebaseId);
 
-        if (response.statusCode == 200) {
-          _fetchCities(); // Refresh list
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('City deleted successfully')),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to delete city')),
-            );
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('City deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -98,14 +59,6 @@ class _CitiesScreenState extends State<CitiesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(child: Text(_errorMessage));
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -122,67 +75,143 @@ class _CitiesScreenState extends State<CitiesScreen> {
                   color: Colors.black87,
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await context.push('/cities/add');
-                  _fetchCities();
-                },
-                icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                label: const Text('Add Country',
-                    style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_done,
+                            size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Firebase',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.push('/cities/add');
+                    },
+                    icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                    label: const Text('Add Country',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 24),
+          _buildCitiesStream(),
+        ],
+      ),
+    );
+  }
 
-          // Table Layout
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+  Widget _buildCitiesStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseCityService.getCities(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
                 ),
               ],
             ),
-            child: Column(
-              children: [
-                // Header
-                _buildTableHeader(),
-                // Items
-                if (_cities.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(32.0),
-                    child: Center(child: Text('No cities found.')),
-                  )
-                else
-                  ..._cities.map((city) {
-                    return CityTableRow(
-                      name: city['name'] ?? 'No Name',
-                      state: city['state'] ?? '',
-                      isActive: city['isActive'] == true,
-                      onEdit: () async {
-                        await context.push('/cities/add', extra: city);
-                        _fetchCities();
-                      },
-                      onDelete: () => _deleteCity(city['_id']),
-                    );
-                  }).toList(),
-              ],
-            ),
+          );
+        }
+
+        final cities = snapshot.data ?? [];
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
+          child: Column(
+            children: [
+              _buildTableHeader(),
+              if (cities.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(32.0),
+                  child: Column(
+                    children: [
+                      Icon(Icons.location_city_outlined,
+                          size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No cities found',
+                        style: TextStyle(
+                            fontSize: 18, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...cities.map((city) {
+                  return CityTableRow(
+                    name: city['name'] ?? 'No Name',
+                    state: city['state'] ?? '',
+                    isActive: city['isActive'] == true,
+                    onEdit: () async {
+                      final editData = {
+                        ...city,
+                        'firebaseId': city['id'],
+                      };
+                      await context.push('/cities/add', extra: editData);
+                    },
+                    onDelete: () => _deleteCity(city['id'], city['mongoId']),
+                  );
+                }).toList(),
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -21,14 +21,12 @@ class _BookingDetailsScreenState extends ConsumerState<BookingDetailsScreen> {
   Future<void> _updateStatus(String newStatus) async {
     setState(() => _isLoading = true);
     try {
-      final orderId = widget.booking['orderId'] ??
-          widget.booking['_id']; // Handle different id fields
-
       final dbId = widget.booking['_id'];
+      final userId = widget.booking['userId'];
 
       await ref
           .read(bookingsRepositoryProvider)
-          .updateBookingStatus(dbId, newStatus);
+          .updateBookingStatus(dbId, newStatus, userId: userId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

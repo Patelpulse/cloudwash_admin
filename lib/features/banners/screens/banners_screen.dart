@@ -1,10 +1,7 @@
-import 'dart:convert';
-
+import 'package:cloud_admin/core/services/firebase_banner_service.dart';
 import 'package:cloud_admin/features/banners/widgets/banner_card.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class BannersScreen extends StatefulWidget {
   const BannersScreen({super.key});
@@ -14,41 +11,9 @@ class BannersScreen extends StatefulWidget {
 }
 
 class _BannersScreenState extends State<BannersScreen> {
-  List<dynamic> _banners = [];
-  bool _isLoading = true;
-  String _errorMessage = '';
+  final _firebaseBannerService = FirebaseBannerService();
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchBanners();
-  }
-
-  Future<void> _fetchBanners() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/banners'));
-
-      if (response.statusCode == 200) {
-        setState(() {
-          _banners = json.decode(response.body);
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to load banners';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _deleteBanner(String id) async {
+  Future<void> _deleteBanner(String firebaseId, String? mongoId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -69,27 +34,23 @@ class _BannersScreenState extends State<BannersScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = AppConfig.apiUrl;
-        final response = await http.delete(Uri.parse('$baseUrl/banners/$id'));
+        await _firebaseBannerService.deleteBanner(firebaseId);
 
-        if (response.statusCode == 200) {
-          _fetchBanners(); // Refresh list
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Banner deleted successfully')),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to delete banner')),
-            );
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Banner deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -98,14 +59,6 @@ class _BannersScreenState extends State<BannersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(child: Text(_errorMessage));
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -122,34 +75,116 @@ class _BannersScreenState extends State<BannersScreen> {
                   color: Colors.black87,
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await context.push('/banners/add');
-                  _fetchBanners();
-                },
-                icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                label: const Text('Add Banner',
-                    style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF8B5CF6),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_done,
+                            size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Firebase',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.push('/banners/add');
+                    },
+                    icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                    label: const Text('Add Banner',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF8B5CF6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 24),
-          _banners.isEmpty
-              ? const Center(child: Text('No banners found.'))
-              : _buildBannersGrid(context),
+          _buildBannersStream(),
         ],
       ),
     );
   }
 
-  Widget _buildBannersGrid(BuildContext context) {
+  Widget _buildBannersStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseBannerService.getBanners(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final banners = snapshot.data ?? [];
+
+        if (banners.isEmpty) {
+          return Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.view_carousel_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'No banners found',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return _buildBannersGrid(context, banners);
+      },
+    );
+  }
+
+  Widget _buildBannersGrid(
+      BuildContext context, List<Map<String, dynamic>> banners) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -172,22 +207,25 @@ class _BannersScreenState extends State<BannersScreen> {
             mainAxisSpacing: 24,
             childAspectRatio: childAspectRatio,
           ),
-          itemCount: _banners.length,
+          itemCount: banners.length,
           itemBuilder: (context, index) {
-            final banner = _banners[index];
+            final banner = banners[index];
             return BannerCard(
               title: banner['title'] ?? 'No Title',
               description: banner['description'] ?? '',
-              position: banner['position'] ?? 'Home Top Slider',
+              position: 'Order: ${banner['order'] ?? 0}',
               status:
                   (banner['isActive'] == true) ? 'Published' : 'Unpublished',
               imageUrl: banner['imageUrl'],
               placeholderColor: Colors.purple.shade200,
               onEdit: () async {
-                await context.push('/banners/add', extra: banner);
-                _fetchBanners();
+                final editData = {
+                  ...banner,
+                  'firebaseId': banner['id'],
+                };
+                await context.push('/banners/add', extra: editData);
               },
-              onDelete: () => _deleteBanner(banner['_id']),
+              onDelete: () => _deleteBanner(banner['id'], banner['mongoId']),
             );
           },
         );

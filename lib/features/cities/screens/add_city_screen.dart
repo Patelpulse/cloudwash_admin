@@ -1,10 +1,7 @@
-import 'dart:convert';
-
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/services/firebase_city_service.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class AddCityScreen extends StatefulWidget {
   final Map<String, dynamic>? cityToEdit;
@@ -16,10 +13,12 @@ class AddCityScreen extends StatefulWidget {
 
 class _AddCityScreenState extends State<AddCityScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _firebaseCityService = FirebaseCityService();
 
   // Controllers
   final _nameController = TextEditingController();
   final _stateController = TextEditingController();
+  final _countryController = TextEditingController();
 
   // State
   bool _isLoading = false;
@@ -37,6 +36,7 @@ class _AddCityScreenState extends State<AddCityScreen> {
     final c = widget.cityToEdit!;
     _nameController.text = c['name'] ?? '';
     _stateController.text = c['state'] ?? '';
+    _countryController.text = c['country'] ?? 'India';
     _isActive = c['isActive'] == true;
   }
 
@@ -46,49 +46,45 @@ class _AddCityScreenState extends State<AddCityScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = AppConfig.apiUrl;
-      final isEditing = widget.cityToEdit != null;
-      final url = isEditing
-          ? '$baseUrl/cities/${widget.cityToEdit!['_id']}'
-          : '$baseUrl/cities';
-
-      final body = {
-        'name': _nameController.text,
-        'state': _stateController.text,
-        'isActive': _isActive.toString(),
-      };
-
-      final response = isEditing
-          ? await http.put(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: json.encode(body),
-            )
-          : await http.post(
-              Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
-              body: json.encode(body),
-            );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(isEditing ? 'City updated!' : 'City created!')),
-          );
-          context.pop();
-        }
+      // Save to Firebase Firestore
+      if (widget.cityToEdit != null &&
+          widget.cityToEdit!['firebaseId'] != null) {
+        // Update existing in Firebase
+        await _firebaseCityService.updateCity(
+          cityId: widget.cityToEdit!['firebaseId'],
+          name: _nameController.text,
+          state: _stateController.text,
+          country: _countryController.text,
+          isActive: _isActive,
+        );
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed: ${response.statusCode}')),
-          );
-        }
+        // Create new in Firebase
+        await _firebaseCityService.createCity(
+          name: _nameController.text,
+          state: _stateController.text,
+          country: _countryController.text,
+          isActive: _isActive,
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(widget.cityToEdit != null
+                ? 'City updated successfully!'
+                : 'City created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        context.pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -100,6 +96,7 @@ class _AddCityScreenState extends State<AddCityScreen> {
   void dispose() {
     _nameController.dispose();
     _stateController.dispose();
+    _countryController.dispose();
     super.dispose();
   }
 
@@ -153,10 +150,10 @@ class _AddCityScreenState extends State<AddCityScreen> {
                           fontSize: 18, fontWeight: FontWeight.bold)),
                   const Divider(height: 32),
 
-                  // Country Name
+                  // City Name
                   _buildTextField(
                     controller: _nameController,
-                    label: 'Country Name',
+                    label: 'City Name',
                     hint: 'e.g. Lucknow',
                   ),
                   const SizedBox(height: 24),
@@ -169,6 +166,14 @@ class _AddCityScreenState extends State<AddCityScreen> {
                   ),
                   const SizedBox(height: 24),
 
+                  // Country
+                  _buildTextField(
+                    controller: _countryController,
+                    label: 'Country',
+                    hint: 'e.g. India',
+                  ),
+                  const SizedBox(height: 24),
+
                   // Status Toggle
                   Row(
                     children: [
@@ -178,7 +183,7 @@ class _AddCityScreenState extends State<AddCityScreen> {
                       Switch(
                           value: _isActive,
                           onChanged: (v) => setState(() => _isActive = v),
-                          activeColor: AppTheme.successGreen),
+                          activeTrackColor: AppTheme.successGreen),
                       Text(_isActive ? ' Active' : ' Inactive'),
                     ],
                   ),

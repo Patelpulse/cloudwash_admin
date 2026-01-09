@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/services/firebase_service_service.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
 import 'package:cloud_admin/features/services/widgets/service_card.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class ServicesScreen extends StatefulWidget {
   const ServicesScreen({super.key});
@@ -14,42 +13,31 @@ class ServicesScreen extends StatefulWidget {
 }
 
 class _ServicesScreenState extends State<ServicesScreen> {
-  List<dynamic> _services = [];
-  bool _isLoading = true;
-  String _errorMessage = '';
+  final _firebaseService = FirebaseServiceService();
+  final _categoryService = FirebaseCategoryService();
+
+  String _selectedCategoryFilter = 'All Categories';
   final Set<String> _selectedServiceIds = {};
+  Map<String, String> _categoryMap = {}; // id -> name
 
   @override
   void initState() {
     super.initState();
-    _fetchServices();
+    _loadRelatedData();
   }
 
-  Future<void> _fetchServices() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/services'));
-
-      if (response.statusCode == 200) {
+  Future<void> _loadRelatedData() async {
+    // Load categories and sub-categories for display
+    _categoryService.getCategories().listen((categories) {
+      if (mounted) {
         setState(() {
-          _services = json.decode(response.body);
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to load services';
-          _isLoading = false;
+          _categoryMap = {for (var cat in categories) cat['id']: cat['name']};
         });
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error: $e';
-        _isLoading = false;
-      });
-    }
+    });
   }
 
-  Future<void> _deleteService(String id) async {
+  Future<void> _deleteService(String firebaseId, String? mongoId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -70,37 +58,33 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
     if (confirmed == true) {
       try {
-        final baseUrl = AppConfig.apiUrl;
-        final response = await http.delete(Uri.parse('$baseUrl/services/$id'));
+        await _firebaseService.deleteService(firebaseId);
 
-        if (response.statusCode == 200) {
-          _fetchServices(); // Refresh list
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Service deleted successfully')),
-            );
-          }
-        } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to delete service')),
-            );
-          }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Service deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
     }
   }
 
-  void _toggleSelectAll(bool? selected) {
+  void _toggleSelectAll(bool? selected, List<Map<String, dynamic>> services) {
     setState(() {
       if (selected == true) {
-        _selectedServiceIds.addAll(_services.map((s) => s['_id'] as String));
+        _selectedServiceIds.addAll(services.map((s) => s['id'] as String));
       } else {
         _selectedServiceIds.clear();
       }
@@ -140,36 +124,30 @@ class _ServicesScreenState extends State<ServicesScreen> {
     );
 
     if (confirmed == true) {
-      setState(() => _isLoading = true);
       try {
-        final baseUrl = AppConfig.apiUrl;
-        final response = await http.post(
-          Uri.parse('$baseUrl/services/bulk-delete'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({'ids': _selectedServiceIds.toList()}),
-        );
-
-        if (response.statusCode == 200) {
-          _selectedServiceIds.clear();
-          _fetchServices();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$count services deleted successfully')),
-            );
-          }
-        } else {
-          setState(() => _isLoading = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to delete services')),
-            );
-          }
+        for (var id in _selectedServiceIds) {
+          await _firebaseService.deleteService(id);
         }
-      } catch (e) {
-        setState(() => _isLoading = false);
+
+        setState(() {
+          _selectedServiceIds.clear();
+        });
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
+            SnackBar(
+              content: Text('$count services deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -178,14 +156,6 @@ class _ServicesScreenState extends State<ServicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage.isNotEmpty) {
-      return Center(child: Text(_errorMessage));
-    }
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -204,6 +174,32 @@ class _ServicesScreenState extends State<ServicesScreen> {
               ),
               Row(
                 children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_done,
+                            size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Firebase',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
                   if (_selectedServiceIds.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 16),
@@ -226,7 +222,6 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   ElevatedButton.icon(
                     onPressed: () async {
                       await context.push('/services/add');
-                      _fetchServices();
                     },
                     icon: const Icon(Icons.add, size: 18, color: Colors.white),
                     label: const Text('Add New Service',
@@ -244,17 +239,88 @@ class _ServicesScreenState extends State<ServicesScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          _buildFilters(),
-          const SizedBox(height: 24),
-          _services.isEmpty
-              ? const Center(child: Text('No services found.'))
-              : _buildServicesGrid(context),
+          _buildServicesStream(),
         ],
       ),
     );
   }
 
-  Widget _buildFilters() {
+  Widget _buildServicesStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseService.getServices(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        var services = snapshot.data ?? [];
+
+        // Apply filter
+        if (_selectedCategoryFilter != 'All Categories') {
+          final categoryId = _categoryMap.entries
+              .firstWhere((e) => e.value == _selectedCategoryFilter,
+                  orElse: () => const MapEntry('', ''))
+              .key;
+          if (categoryId.isNotEmpty) {
+            services = services
+                .where((service) => service['categoryId'] == categoryId)
+                .toList();
+          }
+        }
+
+        if (services.isEmpty) {
+          return Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.design_services_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'No services found',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            _buildFilters(services),
+            const SizedBox(height: 24),
+            _buildServicesGrid(context, services),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFilters(List<Map<String, dynamic>> services) {
+    List<String> categoryNames = ['All Categories', ..._categoryMap.values];
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -272,15 +338,18 @@ class _ServicesScreenState extends State<ServicesScreen> {
           Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: 'All Categories',
+                value: categoryNames.contains(_selectedCategoryFilter)
+                    ? _selectedCategoryFilter
+                    : 'All Categories',
                 isExpanded: true,
-                items: [
-                  'All Categories',
-                  // In a real app, populate this dynamically or remove hardcoded
-                ]
+                items: categoryNames
                     .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                     .toList(),
-                onChanged: (v) {},
+                onChanged: (v) {
+                  setState(() {
+                    _selectedCategoryFilter = v!;
+                  });
+                },
               ),
             ),
           ),
@@ -293,9 +362,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
             ),
           ),
           Checkbox(
-            value: _selectedServiceIds.length == _services.length &&
-                _services.isNotEmpty,
-            onChanged: _toggleSelectAll,
+            value: _selectedServiceIds.length == services.length &&
+                services.isNotEmpty,
+            onChanged: (v) => _toggleSelectAll(v, services),
             activeColor: AppTheme.primaryBlue,
           ),
           const Text('Select All',
@@ -306,7 +375,8 @@ class _ServicesScreenState extends State<ServicesScreen> {
     );
   }
 
-  Widget _buildServicesGrid(BuildContext context) {
+  Widget _buildServicesGrid(
+      BuildContext context, List<Map<String, dynamic>> services) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -330,12 +400,11 @@ class _ServicesScreenState extends State<ServicesScreen> {
             mainAxisSpacing: 24,
             childAspectRatio: childAspectRatio,
           ),
-          itemCount: _services.length,
+          itemCount: services.length,
           itemBuilder: (context, index) {
-            final s = _services[index];
-            final categoryName = (s['category'] != null && s['category'] is Map)
-                ? s['category']['name']
-                : 'Uncategorized';
+            final s = services[index];
+            final categoryName =
+                _categoryMap[s['categoryId']] ?? 'Uncategorized';
 
             return ServiceCard(
               title: s['name'] ?? 'No Name',
@@ -344,14 +413,17 @@ class _ServicesScreenState extends State<ServicesScreen> {
               category: categoryName,
               isActive: s['isActive'] == true,
               imageUrl: s['imageUrl'],
-              placeholderColor: Colors.blue.shade100, // Or dynamic
-              isSelected: _selectedServiceIds.contains(s['_id']),
-              onSelectChanged: (v) => _onServiceSelected(s['_id'], v),
+              placeholderColor: Colors.blue.shade100,
+              isSelected: _selectedServiceIds.contains(s['id']),
+              onSelectChanged: (v) => _onServiceSelected(s['id'], v),
               onEdit: () async {
-                await context.push('/services/add', extra: s);
-                _fetchServices();
+                final editData = {
+                  ...s,
+                  'firebaseId': s['id'],
+                };
+                await context.push('/services/add', extra: editData);
               },
-              onDelete: () => _deleteService(s['_id']),
+              onDelete: () => _deleteService(s['id'], s['mongoId']),
             );
           },
         );

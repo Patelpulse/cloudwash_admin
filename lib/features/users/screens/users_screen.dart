@@ -17,13 +17,13 @@ class UsersScreen extends ConsumerWidget {
     final usersAsync = ref.watch(usersProvider);
 
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Light background for contrast
+      backgroundColor: Colors.grey[50],
       body: usersAsync.when(
         data: (users) {
-          // Calculate Stats
+          debugPrint('DEBUG: UsersScreen received ${users.length} users');
           final total = users.length;
-          final active = users.length; // Assuming all are active for now
-          final blocked = 0;
+          final active = users.where((u) => u.isVerified).length;
+          final blocked = users.where((u) => !u.isVerified).length;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -37,23 +37,29 @@ class UsersScreen extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'All Users ($total)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          'All Users ($total)',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        _buildFirebaseBadge(),
+                      ],
                     ),
                     IconButton(
                       icon: const Icon(Icons.refresh),
-                      onPressed: () => ref.refresh(usersProvider),
+                      onPressed: () => ref.invalidate(usersProvider),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 if (users.isEmpty)
-                  const Center(child: Text("No users found."))
+                  _buildEmptyState()
                 else if (_filterUsers(users, ref.watch(userSearchProvider))
                     .isEmpty)
                   const Center(child: Text("No users found matching search."))
@@ -233,6 +239,54 @@ class UsersScreen extends ConsumerWidget {
       },
     );
   }
+
+  Widget _buildFirebaseBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green[100]!),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_done, size: 14, color: Colors.green[700]),
+          const SizedBox(width: 4),
+          Text(
+            'Firebase Live',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.green[700],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40.0),
+        child: Column(
+          children: [
+            Icon(Icons.people_outline, size: 64, color: Colors.grey[300]),
+            const SizedBox(height: 16),
+            const Text(
+              "No users found in Firebase Firestore.",
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Make sure users have signed up in the mobile app.",
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _UserDetailsModal extends ConsumerWidget {
@@ -242,7 +296,8 @@ class _UserDetailsModal extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final stats = ref.watch(userStatsProvider(user.id)).valueOrNull;
+    final statsAsync = ref.watch(userStatsProvider(user.id));
+    final ordersAsync = ref.watch(userOrdersProvider(user.id));
 
     return Align(
       alignment: Alignment.centerRight,
@@ -354,8 +409,8 @@ class _UserDetailsModal extends ConsumerWidget {
                       const SizedBox(height: 32),
 
                       // Stats Section
-                      if (stats != null)
-                        Container(
+                      statsAsync.when(
+                        data: (stats) => Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF8FAFC),
@@ -366,7 +421,7 @@ class _UserDetailsModal extends ConsumerWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceAround,
                             children: [
                               _buildStatItem(
-                                  'Total Bookings',
+                                  'Total Orders',
                                   stats['totalOrders'].toString(),
                                   Icons.shopping_bag_outlined,
                                   Colors.orange),
@@ -381,9 +436,16 @@ class _UserDetailsModal extends ConsumerWidget {
                                   Colors.green),
                             ],
                           ),
-                        )
-                      else
-                        const Center(child: CircularProgressIndicator()),
+                        ),
+                        loading: () => const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                        error: (err, _) =>
+                            const Center(child: Text('Error loading stats')),
+                      ),
 
                       const SizedBox(height: 32),
 
@@ -396,6 +458,124 @@ class _UserDetailsModal extends ConsumerWidget {
                       const Divider(height: 32),
                       _detailRow(Icons.verified_user_outlined, 'Status',
                           'Active (Verified)'),
+
+                      const SizedBox(height: 32),
+
+                      // Recent Orders Section
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Recent Orders',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              // Go to bookings screen with filter maybe?
+                              // For now just close and stay simple
+                            },
+                            child: const Text('View All'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ordersAsync.when(
+                        data: (orders) {
+                          if (orders.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'No orders found for this user',
+                                  style: TextStyle(color: Colors.grey[500]),
+                                ),
+                              ),
+                            );
+                          }
+                          return ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: orders.length > 5 ? 5 : orders.length,
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, index) {
+                              final order = orders[index];
+                              final status = order['status'] ?? 'pending';
+                              final total =
+                                  order['priceSummary']?['total'] ?? 0;
+                              final date = order['createdAt'];
+
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border:
+                                      Border.all(color: Colors.grey.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(status)
+                                            .withOpacity(0.1),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        _getStatusIcon(status),
+                                        color: _getStatusColor(status),
+                                        size: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Order #${order['orderNumber'] ?? order['id'].toString().substring(0, 6)}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          Text(
+                                            date != null
+                                                ? DateFormat('MMM dd, yyyy')
+                                                    .format(
+                                                        DateTime.parse(date))
+                                                : 'Recent',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[500],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Text(
+                                      '₹$total',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        },
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (err, _) => Center(child: Text('Error: $err')),
+                      ),
                     ],
                   ),
                 ),
@@ -522,5 +702,39 @@ class _UserDetailsModal extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
+      case 'confirmed':
+        return Colors.blue;
+      case 'in-progress':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Icons.check_circle;
+      case 'pending':
+        return Icons.access_time;
+      case 'cancelled':
+        return Icons.cancel;
+      case 'confirmed':
+        return Icons.thumb_up;
+      case 'in-progress':
+        return Icons.work;
+      default:
+        return Icons.help;
+    }
   }
 }

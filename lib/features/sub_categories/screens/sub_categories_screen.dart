@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/services/firebase_subcategory_service.dart';
+import 'package:cloud_admin/core/services/firebase_category_service.dart';
 import 'package:cloud_admin/features/sub_categories/widgets/sub_category_card.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 
 class SubCategoriesScreen extends StatefulWidget {
   final String? initialCategoryFilter;
@@ -15,10 +14,10 @@ class SubCategoriesScreen extends StatefulWidget {
 }
 
 class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
-  List<dynamic> _subCategories = [];
-  List<dynamic> _categories = [];
-  bool _isLoading = true;
+  final _firebaseService = FirebaseSubCategoryService();
+  final _categoryService = FirebaseCategoryService();
   String _selectedCategoryFilter = 'All Categories';
+  Map<String, String> _categoryMap = {}; // id -> name
 
   @override
   void initState() {
@@ -26,113 +25,68 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
     if (widget.initialCategoryFilter != null) {
       _selectedCategoryFilter = widget.initialCategoryFilter!;
     }
-    _fetchData();
+    _loadCategories();
   }
 
-  @override
-  void didUpdateWidget(covariant SubCategoriesScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialCategoryFilter != oldWidget.initialCategoryFilter) {
-      setState(() {
-        _selectedCategoryFilter =
-            widget.initialCategoryFilter ?? 'All Categories';
-      });
-    }
-  }
-
-  Future<void> _fetchData() async {
-    try {
-      final baseUrl = AppConfig.apiUrl;
-
-      // Fetch Sub Categories
-      final subResponse = await http.get(Uri.parse('$baseUrl/sub-categories'));
-
-      // Fetch Categories for filter
-      final catResponse = await http.get(Uri.parse('$baseUrl/categories'));
-
-      if (subResponse.statusCode == 200 && catResponse.statusCode == 200) {
-        if (mounted) {
-          setState(() {
-            _subCategories = json.decode(subResponse.body);
-            _categories = json.decode(catResponse.body);
-            _isLoading = false;
-          });
-        }
-      } else {
-        throw Exception('Failed to load data');
-      }
-    } catch (e) {
+  Future<void> _loadCategories() async {
+    // Load categories for filter dropdown
+    _categoryService.getCategories().listen((categories) {
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
+        setState(() {
+          _categoryMap = {for (var cat in categories) cat['id']: cat['name']};
+        });
       }
-    }
+    });
   }
 
-  Future<void> _deleteSubCategory(String id) async {
-    bool confirm = await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Delete Sub-Category'),
-            content: const Text(
-                'Are you sure you want to delete this sub-category? This action cannot be undone.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Delete'),
-              ),
-            ],
+  Future<void> _deleteSubCategory(String firebaseId, String? mongoId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Sub-Category'),
+        content: const Text(
+            'Are you sure you want to delete this sub-category? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-        ) ??
-        false;
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
 
-    if (!confirm) return;
+    if (confirmed == true) {
+      try {
+        await _firebaseService.deleteSubCategory(firebaseId);
 
-    try {
-      final baseUrl = AppConfig.apiUrl;
-      final response =
-          await http.delete(Uri.parse('$baseUrl/sub-categories/$id'));
-
-      if (response.statusCode == 200) {
-        _fetchData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sub-Category deleted successfully')),
+            const SnackBar(
+              content: Text('Sub-category deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
-      } else {
-        throw Exception('Failed to delete');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting sub-category: $e')),
-        );
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final filteredSubCategories = _selectedCategoryFilter == 'All Categories'
-        ? _subCategories
-        : _subCategories.where((sub) {
-            final catName =
-                sub['category'] is Map ? sub['category']['name'] : '';
-            return catName == _selectedCategoryFilter;
-          }).toList();
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -149,39 +103,64 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
                   color: Colors.black87,
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  await context.push('/sub-categories/add');
-                  _fetchData();
-                },
-                icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                label: const Text('Add Sub Category',
-                    style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryBlue,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_done,
+                            size: 16, color: Colors.green.shade700),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Firebase',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      await context.push('/sub-categories/add');
+                    },
+                    icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                    label: const Text('Add Sub Category',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryBlue,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 24),
           _buildFilterBar(),
           const SizedBox(height: 24),
-          filteredSubCategories.isEmpty
-              ? const Center(child: Text('No sub-categories found'))
-              : _buildGrid(context, filteredSubCategories),
+          _buildSubCategoryStream(),
         ],
       ),
     );
   }
 
   Widget _buildFilterBar() {
-    // Extract unique category names for dropdown
-    List<String> categoryNames = ['All Categories'];
-    categoryNames.addAll(_categories.map((c) => c['name'].toString()));
+    List<String> categoryNames = ['All Categories', ..._categoryMap.values];
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -220,7 +199,74 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
     );
   }
 
-  Widget _buildGrid(BuildContext context, List<dynamic> items) {
+  Widget _buildSubCategoryStream() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _firebaseService.getSubCategories(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(40.0),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        var subCategories = snapshot.data ?? [];
+
+        // Apply filter
+        if (_selectedCategoryFilter != 'All Categories') {
+          final categoryId = _categoryMap.entries
+              .firstWhere((e) => e.value == _selectedCategoryFilter,
+                  orElse: () => const MapEntry('', ''))
+              .key;
+          if (categoryId.isNotEmpty) {
+            subCategories = subCategories
+                .where((sub) => sub['categoryId'] == categoryId)
+                .toList();
+          }
+        }
+
+        if (subCategories.isEmpty) {
+          return Center(
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.category_outlined,
+                    size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 16),
+                Text(
+                  'No sub-categories found',
+                  style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return _buildGrid(context, subCategories);
+      },
+    );
+  }
+
+  Widget _buildGrid(BuildContext context, List<Map<String, dynamic>> items) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -246,23 +292,23 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
           itemCount: items.length,
           itemBuilder: (context, index) {
             final item = items[index];
-            // Access parent name safely. 'category' might be populated or an ID string.
-            // Based on controller, it is populated with 'name'.
-            final parentName =
-                item['category'] is Map ? item['category']['name'] : 'Unknown';
+            final parentName = _categoryMap[item['categoryId']] ?? 'Unknown';
 
             return SubCategoryCard(
               title: item['name'] ?? 'No Name',
               parentCategory: parentName,
-              servicesCount: '0', // Placeholder or add logic if needed
+              servicesCount: '0', // Can be calculated
               isActive: item['isActive'] == true,
               imageUrl: item['imageUrl'],
-              placeholderColor: Colors.blue.shade100, // Or dynamic color
+              placeholderColor: Colors.blue.shade100,
               onEdit: () async {
-                await context.push('/sub-categories/add', extra: item);
-                _fetchData();
+                final editData = {
+                  ...item,
+                  'firebaseId': item['id'],
+                };
+                await context.push('/sub-categories/add', extra: editData);
               },
-              onDelete: () => _deleteSubCategory(item['_id']),
+              onDelete: () => _deleteSubCategory(item['id'], item['mongoId']),
             );
           },
         );

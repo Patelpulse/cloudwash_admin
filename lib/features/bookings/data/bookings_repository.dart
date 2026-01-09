@@ -1,38 +1,47 @@
-import 'dart:convert';
-import 'package:cloud_admin/core/config/app_config.dart';
-import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 final bookingsRepositoryProvider = Provider((ref) => BookingsRepository());
 
 class BookingsRepository {
-  Future<void> updateBookingStatus(String orderId, String status) async {
-    final prefs = await SharedPreferences.getInstance();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-    // Retrieve token from nested admin_data/token
-    String? token;
-    final adminDataString = prefs.getString('admin_data');
-    if (adminDataString != null) {
-      try {
-        final adminData = jsonDecode(adminDataString);
-        token = adminData['token'];
-      } catch (e) {
-        print('Error parsing admin_data: $e');
+  Future<void> updateBookingStatus(
+    String orderId,
+    String status, {
+    String? userId,
+  }) async {
+    try {
+      final updates = {
+        'status': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // 1. Update in main orders collection
+      await _firestore.collection('orders').doc(orderId).update(updates);
+
+      // 2. Update in user's orders subcollection if userId is known
+      String? actualUserId = userId;
+
+      // If userId wasn't provided, try to find it from the main order document
+      if (actualUserId == null) {
+        final doc = await _firestore.collection('orders').doc(orderId).get();
+        actualUserId = doc.data()?['userId'];
       }
-    }
 
-    final response = await http.patch(
-      Uri.parse('${AppConfig.apiUrl}/orders/$orderId/status'),
-      headers: {
-        'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'status': status}),
-    );
+      if (actualUserId != null) {
+        await _firestore
+            .collection('users')
+            .doc(actualUserId)
+            .collection('orders')
+            .doc(orderId)
+            .update(updates);
+      }
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to update status: ${response.body}');
+      print('✅ Order $orderId status updated to $status in Firestore');
+    } catch (e) {
+      print('❌ Firebase update status error: $e');
+      throw Exception('Failed to update status in Firebase: $e');
     }
   }
 }
