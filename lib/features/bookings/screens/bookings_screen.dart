@@ -146,13 +146,31 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
                 const SizedBox(height: 32),
                 _buildFilters(context),
                 const SizedBox(height: 32),
-                Text(
-                  'All Bookings ($total)',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'All Bookings ($total)',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () {
+                        _playNotificationSound();
+                        // Auto-stop after 3 seconds for test
+                        Future.delayed(const Duration(seconds: 3), () {
+                          if (mounted) _stopNotificationSound();
+                        });
+                      },
+                      icon: const Icon(Icons.volume_up, size: 20),
+                      label: const Text('Test Audio'),
+                      style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey[700]),
+                    )
+                  ],
                 ),
                 const SizedBox(height: 16),
                 if (filteredDocs.isEmpty)
@@ -428,8 +446,7 @@ class _BookingsScreenState extends ConsumerState<BookingsScreen> {
       _alertPlayer = AudioPlayer();
       await _alertPlayer!.setReleaseMode(ReleaseMode.loop);
       // Continuous ringing sound
-      await _alertPlayer!.play(UrlSource(
-          'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'));
+      await _alertPlayer!.play(AssetSource('sounds/notification.mp3'));
     } catch (e) {
       print('Could not play sound: $e');
     }
