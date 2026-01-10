@@ -16,16 +16,10 @@ class SocketService {
       url = url.substring(0, url.length - 5);
     }
 
-    print('Connecting to Socket.io at $url');
-
-    socket = IO.io(
-        url,
-        IO.OptionBuilder()
-            .setTransports(['websocket'])
-            .enableAutoConnect()
-            .build());
-
-    socket.connect();
+    // Disabled Socket.IO in favor of Firebase Realtime Streams
+    // print('Connecting to Socket.io at $url');
+    // socket = IO.io(url, IO.OptionBuilder().setTransports(['websocket']).enableAutoConnect().build());
+    // socket.connect();
 
     socket.onConnect((_) {
       print('✅ Connected to Socket.io');

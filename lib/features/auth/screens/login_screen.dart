@@ -1,10 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,40 +25,52 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final baseUrl = AppConfig.apiUrl;
-      // const baseUrl = 'https://cloudwashapi.onrender.com/api';
-      final response = await http.post(
-        Uri.parse('$baseUrl/admin/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'email': _emailController.text,
-          'password': _passwordController.text,
-        }),
+      // 1. Authenticate with Firebase Auth directly
+      final userCredential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+      final user = userCredential.user;
 
-        // Save auth data
+      if (user != null) {
+        // 2. Prepare admin data for local storage
+        final userData = {
+          'uid': user.uid,
+          'email': user.email,
+          'token': await user.getIdToken(), // Use Firebase ID Token
+          'role':
+              'admin', // Assume admin for now since they logged into admin panel
+        };
+
+        // 3. Save auth data
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('admin_data', json.encode(data));
+        await prefs.setString('admin_data', json.encode(userData));
         await prefs.setBool('is_logged_in', true);
 
         if (mounted) {
           context.go('/');
         }
-      } else {
-        if (mounted) {
-          final error = json.decode(response.body);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error['message'] ?? 'Login failed')),
-          );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        String message = 'Login failed';
+        if (e.code == 'user-not-found') {
+          message = 'No user found for that email.';
+        } else if (e.code == 'wrong-password') {
+          message = 'Wrong password provided.';
+        } else {
+          message = e.message ?? 'Authentication failed';
         }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connection Error: $e')),
+          SnackBar(content: Text('Error: $e')),
         );
       }
     } finally {
