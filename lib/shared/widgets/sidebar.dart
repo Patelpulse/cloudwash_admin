@@ -127,6 +127,11 @@ class Sidebar extends ConsumerWidget {
                   title: 'Profile',
                   path: '/profile',
                 ),
+                _SidebarItem(
+                  icon: Icons.brush_outlined,
+                  title: 'Branding',
+                  path: '/settings',
+                ),
               ],
             ),
           ),

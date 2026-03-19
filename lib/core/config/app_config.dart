@@ -11,6 +11,6 @@ class AppConfig {
     if (envUrl != null && envUrl.isNotEmpty) return envUrl;
 
     // 3. Fallback
-    return 'http://localhost:5000/api';
+    return 'http://localhost:5001/api';
   }
 }

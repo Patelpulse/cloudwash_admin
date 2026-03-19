@@ -4,6 +4,7 @@ import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AddNotificationScreen extends StatefulWidget {
   final Map<String, dynamic>? notificationToEdit;
@@ -96,6 +97,14 @@ class _AddNotificationScreenState extends State<AddNotificationScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final adminDataStr = prefs.getString('admin_data');
+      String? token;
+      if (adminDataStr != null) {
+        final adminData = json.decode(adminDataStr);
+        token = adminData['token'];
+      }
+
       final baseUrl = AppConfig.apiUrl;
       final isEditing = widget.notificationToEdit != null;
       final url = isEditing
@@ -107,19 +116,25 @@ class _AddNotificationScreenState extends State<AddNotificationScreen> {
         'message': _messageController.text,
         'type': _selectedType,
         'targetAudience': _selectedAudience,
-        'isActive': _isActive.toString(),
+        'isActive': _isActive,
         'scheduledFor': _scheduledDate?.toIso8601String(),
       };
 
       final response = isEditing
           ? await http.put(
               Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${token ?? ''}',
+              },
               body: json.encode(body),
             )
           : await http.post(
               Uri.parse(url),
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${token ?? ''}',
+              },
               body: json.encode(body),
             );
 

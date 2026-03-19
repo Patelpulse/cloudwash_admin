@@ -15,6 +15,7 @@ import 'package:cloud_admin/features/bookings/screens/bookings_screen.dart';
 import 'package:cloud_admin/features/notifications/screens/add_notification_screen.dart';
 import 'package:cloud_admin/features/notifications/screens/notifications_screen.dart';
 import 'package:cloud_admin/features/profile/screens/profile_screen.dart';
+import 'package:cloud_admin/features/settings/screens/general_settings_screen.dart';
 import 'package:cloud_admin/features/services/screens/add_service_screen.dart';
 import 'package:cloud_admin/features/services/screens/services_screen.dart';
 import 'package:cloud_admin/features/sub_categories/screens/add_sub_category_screen.dart';
@@ -216,6 +217,10 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
             GoRoute(
               path: '/profile',
               builder: (context, state) => const ProfileScreen(),
+            ),
+            GoRoute(
+              path: '/settings',
+              builder: (context, state) => const GeneralSettingsScreen(),
             ),
             GoRoute(
               path: '/web-landing',

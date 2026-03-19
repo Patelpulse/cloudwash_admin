@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -26,8 +27,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _fetchNotifications() async {
     setState(() => _isLoading = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final adminDataStr = prefs.getString('admin_data');
+      String? token;
+      if (adminDataStr != null) {
+        final adminData = json.decode(adminDataStr);
+        token = adminData['token'];
+      }
+
       final baseUrl = AppConfig.apiUrl;
-      final response = await http.get(Uri.parse('$baseUrl/notifications'));
+      final response = await http.get(
+        Uri.parse('$baseUrl/notifications'),
+        headers: {
+          'Authorization': 'Bearer ${token ?? ''}',
+          'Content-Type': 'application/json',
+        },
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
@@ -57,9 +72,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _deleteNotification(String id) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final adminDataStr = prefs.getString('admin_data');
+      String? token;
+      if (adminDataStr != null) {
+        final adminData = json.decode(adminDataStr);
+        token = adminData['token'];
+      }
+
       final baseUrl = AppConfig.apiUrl;
-      final response =
-          await http.delete(Uri.parse('$baseUrl/notifications/$id'));
+      final response = await http.delete(
+        Uri.parse('$baseUrl/notifications/$id'),
+        headers: {
+          'Authorization': 'Bearer ${token ?? ''}',
+          'Content-Type': 'application/json',
+        },
+      );
 
       if (response.statusCode == 200) {
         if (mounted) {
