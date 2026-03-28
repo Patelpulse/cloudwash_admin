@@ -1,21 +1,25 @@
 class AboutUsModel {
   final String id;
   final String title;
-  final String subtitle;
-  final String description;
-  final int experienceYears;
+  final String description1;
+  final String description2;
+  final String visionTitle;
+  final String visionDescription;
+  final String missionTitle;
+  final String missionDescription;
   final String imageUrl;
-  final List<String> points;
   final bool isActive;
 
   AboutUsModel({
     required this.id,
     required this.title,
-    required this.subtitle,
-    required this.description,
-    required this.experienceYears,
+    required this.description1,
+    required this.description2,
+    required this.visionTitle,
+    required this.visionDescription,
+    required this.missionTitle,
+    required this.missionDescription,
     required this.imageUrl,
-    required this.points,
     required this.isActive,
   });
 
@@ -23,11 +27,13 @@ class AboutUsModel {
     return AboutUsModel(
       id: json['_id'] ?? '',
       title: json['title'] ?? '',
-      subtitle: json['subtitle'] ?? '',
-      description: json['description'] ?? '',
-      experienceYears: json['experienceYears'] ?? 0,
+      description1: json['description1'] ?? '',
+      description2: json['description2'] ?? '',
+      visionTitle: json['visionTitle'] ?? 'Our Vision',
+      visionDescription: json['visionDescription'] ?? '',
+      missionTitle: json['missionTitle'] ?? 'Our Mission',
+      missionDescription: json['missionDescription'] ?? '',
       imageUrl: json['imageUrl'] ?? '',
-      points: List<String>.from(json['points'] ?? []),
       isActive: json['isActive'] ?? true,
     );
   }
@@ -36,11 +42,13 @@ class AboutUsModel {
     return {
       '_id': id,
       'title': title,
-      'subtitle': subtitle,
-      'description': description,
-      'experienceYears': experienceYears,
+      'description1': description1,
+      'description2': description2,
+      'visionTitle': visionTitle,
+      'visionDescription': visionDescription,
+      'missionTitle': missionTitle,
+      'missionDescription': missionDescription,
       'imageUrl': imageUrl,
-      'points': points,
       'isActive': isActive,
     };
   }

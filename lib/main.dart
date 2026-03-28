@@ -29,6 +29,8 @@ import 'package:cloud_admin/features/web_landing/screens/edit_stats_screen.dart'
 import 'package:cloud_admin/features/web_landing/screens/edit_testimonials_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_why_choose_us_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/web_landing_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/blog_management_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_contact_screen.dart';
 import 'package:cloud_admin/layout/dashboard_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -245,6 +247,14 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                 GoRoute(
                   path: 'why-choose-us',
                   builder: (context, state) => const EditWhyChooseUsScreen(),
+                ),
+                GoRoute(
+                  path: 'blog',
+                  builder: (context, state) => const BlogManagementScreen(),
+                ),
+                GoRoute(
+                  path: 'contact',
+                  builder: (context, state) => const EditContactScreen(),
                 ),
               ],
             ),

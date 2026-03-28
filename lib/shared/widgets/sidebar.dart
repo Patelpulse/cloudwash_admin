@@ -40,7 +40,7 @@ class Sidebar extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             alignment: Alignment.centerLeft,
             child: const Text(
-              'CLOUDWASH ADMIN',
+              'CloudWash Admin',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 20,

@@ -18,10 +18,12 @@ class EditAboutUsScreen extends ConsumerStatefulWidget {
 class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleController;
-  late TextEditingController _subtitleController;
-  late TextEditingController _descriptionController;
-  late TextEditingController _experienceController;
-  late TextEditingController _pointsController;
+  late TextEditingController _desc1Controller;
+  late TextEditingController _desc2Controller;
+  late TextEditingController _visionTitleController;
+  late TextEditingController _visionDescController;
+  late TextEditingController _missionTitleController;
+  late TextEditingController _missionDescController;
 
   bool _isLoading = false;
   bool _isActive = true;
@@ -33,20 +35,24 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
   void initState() {
     super.initState();
     _titleController = TextEditingController();
-    _subtitleController = TextEditingController();
-    _descriptionController = TextEditingController();
-    _experienceController = TextEditingController();
-    _pointsController = TextEditingController();
+    _desc1Controller = TextEditingController();
+    _desc2Controller = TextEditingController();
+    _visionTitleController = TextEditingController();
+    _visionDescController = TextEditingController();
+    _missionTitleController = TextEditingController();
+    _missionDescController = TextEditingController();
     _fetchData();
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _subtitleController.dispose();
-    _descriptionController.dispose();
-    _experienceController.dispose();
-    _pointsController.dispose();
+    _desc1Controller.dispose();
+    _desc2Controller.dispose();
+    _visionTitleController.dispose();
+    _visionDescController.dispose();
+    _missionTitleController.dispose();
+    _missionDescController.dispose();
     super.dispose();
   }
 
@@ -59,10 +65,12 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
         final about = AboutUsModel.fromJson(data);
 
         _titleController.text = about.title;
-        _subtitleController.text = about.subtitle;
-        _descriptionController.text = about.description;
-        _experienceController.text = about.experienceYears.toString();
-        _pointsController.text = about.points.join(', ');
+        _desc1Controller.text = about.description1;
+        _desc2Controller.text = about.description2;
+        _visionTitleController.text = about.visionTitle;
+        _visionDescController.text = about.visionDescription;
+        _missionTitleController.text = about.missionTitle;
+        _missionDescController.text = about.missionDescription;
 
         setState(() {
           _imageUrl = about.imageUrl;
@@ -97,14 +105,12 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
           'PUT', Uri.parse('$_baseUrl/web-content/about'));
 
       request.fields['title'] = _titleController.text;
-      request.fields['subtitle'] = _subtitleController.text;
-      request.fields['description'] = _descriptionController.text;
-      request.fields['experienceYears'] = _experienceController.text;
-
-      // Points as comma separated string
-      request.fields['points'] = jsonEncode(
-          _pointsController.text.split(',').map((e) => e.trim()).toList());
-
+      request.fields['description1'] = _desc1Controller.text;
+      request.fields['description2'] = _desc2Controller.text;
+      request.fields['visionTitle'] = _visionTitleController.text;
+      request.fields['visionDescription'] = _visionDescController.text;
+      request.fields['missionTitle'] = _missionTitleController.text;
+      request.fields['missionDescription'] = _missionDescController.text;
       request.fields['isActive'] = _isActive.toString();
 
       if (_selectedImageBytes != null) {
@@ -123,7 +129,7 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Saved Successfully')));
-        _fetchData(); // Refresh to get upload url
+        _fetchData(); 
       } else {
         throw Exception('Failed to save');
       }
@@ -139,7 +145,7 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit About Us')),
+      appBar: AppBar(title: const Text('Edit About Us Page')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -186,51 +192,82 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
                     TextFormField(
                       controller: _titleController,
                       decoration: const InputDecoration(
-                        labelText: 'Title',
+                        labelText: 'Main Page Title',
                         border: OutlineInputBorder(),
                       ),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
                     const SizedBox(height: 16),
 
                     TextFormField(
-                      controller: _subtitleController,
-                      decoration: const InputDecoration(
-                        labelText: 'Subtitle',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    TextFormField(
-                      controller: _descriptionController,
+                      controller: _desc1Controller,
                       maxLines: 4,
                       decoration: const InputDecoration(
-                        labelText: 'Description',
+                        labelText: 'Description Paragraph 1',
                         border: OutlineInputBorder(),
                       ),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
                     const SizedBox(height: 16),
 
                     TextFormField(
-                      controller: _experienceController,
-                      keyboardType: TextInputType.number,
+                      controller: _desc2Controller,
+                      maxLines: 4,
                       decoration: const InputDecoration(
-                        labelText: 'Years of Experience',
+                        labelText: 'Description Paragraph 2',
                         border: OutlineInputBorder(),
                       ),
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
                     ),
-                    const SizedBox(height: 16),
+                    const Divider(height: 48),
 
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _visionTitleController,
+                            decoration: const InputDecoration(
+                              labelText: 'Vision Title',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                     TextFormField(
-                      controller: _pointsController,
+                      controller: _visionDescController,
+                      maxLines: 2,
                       decoration: const InputDecoration(
-                        labelText: 'Key Points (comma separated)',
-                        hintText:
-                            'Quality Service, Fast Delivery, Eco-Friendly',
+                        labelText: 'Vision Description',
                         border: OutlineInputBorder(),
                       ),
                     ),
+                    const SizedBox(height: 32),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _missionTitleController,
+                            decoration: const InputDecoration(
+                              labelText: 'Mission Title',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _missionDescController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Mission Description',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     SwitchListTile(
                       title: const Text('Is Active?'),
@@ -244,7 +281,11 @@ class _EditAboutUsScreenState extends ConsumerState<EditAboutUsScreen> {
                       height: 50,
                       child: ElevatedButton(
                         onPressed: _save,
-                        child: const Text('Save Changes'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[900],
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Save Page Content'),
                       ),
                     ),
                   ],

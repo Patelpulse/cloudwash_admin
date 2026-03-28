@@ -140,15 +140,6 @@ class SocketService {
 
       print('🔔 User granted permission: ${settings.authorizationStatus}');
 
-      // 3. Get Token (to verify connection)
-      // For Web, you need a VAPID Key (Web Push Certificate) from Firebase Console > Project Settings > Cloud Messaging > Web Push certs
-      // If you don't pass it, it might fail or use default if configured.
-      final token = await messaging.getToken(
-        vapidKey:
-            'BE3HNie56n4PrfkkOjgeFbDusti6VFCsAxQOcZh56-5l7DbrTIyuyDmylbzjKBsLfAvlEMTaKCZsYKmOhpbzsMk', // I found this key in your uploaded image!
-      );
-      print('🔑 Admin FCM Token: $token');
-
       // 4. Listen to Foreground Messages
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         print('📨 Foreground Message Received: ${message.notification?.title}');
@@ -157,6 +148,18 @@ class SocketService {
           body: message.notification?.body ?? '',
         );
       });
+
+      // 3. Get Token (to verify connection)
+      try {
+        final token = await messaging.getToken(
+          vapidKey:
+              'BE3HNie56n4PrfkkOjgeFbDusti6VFCsAxQOcZh56-5l7DbrTIyuyDmylbzjKBsLfAvlEMTaKCZsYKmOhpbzsMk', 
+        );
+        print('🔑 Admin FCM Token: $token');
+      } catch (e) {
+        print('❌ FCM Token not available (likely blocked): $e');
+      }
+
     } catch (e) {
       print('❌ Error initializing FCM: $e');
     }
