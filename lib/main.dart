@@ -43,7 +43,9 @@ import 'package:cloud_admin/core/firebase/firebase_options.dart';
 
 void main() async {
   usePathUrlStrategy();
-  await dotenv.load(fileName: ".env");
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (_) {}
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
