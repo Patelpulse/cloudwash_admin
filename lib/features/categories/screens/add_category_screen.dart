@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:cloud_admin/core/services/firebase_category_service.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AddCategoryScreen extends StatefulWidget {
   final Map<String, dynamic>? categoryToEdit;
@@ -75,7 +77,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       }
 
       final imageUrl = backendResult['imageUrl'] ?? _existingImageUrl;
-      // final mongoId = backendResult['_id']; // mongoId is not directly used here, but could be if needed
+      final mongoId = backendResult['_id']; 
 
       // Step 2: Save to Firebase Firestore with Cloudinary URL
       final firebaseService = FirebaseCategoryService();
@@ -90,6 +92,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl,
           isActive: _isActive,
+          mongoId: mongoId,
         );
       } else {
         // Create new in Firebase
@@ -99,6 +102,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl ?? '',
           isActive: _isActive,
+          mongoId: mongoId,
         );
       }
 
@@ -141,8 +145,27 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           ? '$baseUrl/categories/${widget.categoryToEdit!['_id']}'
           : '$baseUrl/categories';
 
+      // Get Auth token from SharedPreferences
+      // dynamic prefs;
+      dynamic prefs = await SharedPreferences.getInstance();
+      final adminDataString = prefs.getString('admin_data');
+      String? token;
+      
+      if (adminDataString != null) {
+        final adminData = json.decode(adminDataString);
+        token = adminData['token'];
+      }
+      
       var uri = Uri.parse(url);
       var request = http.MultipartRequest(isEditing ? 'PUT' : 'POST', uri);
+ 
+       // Add Authorization header
+       if (token != null) {
+         request.headers['Authorization'] = 'Bearer $token';
+         if (kDebugMode) {
+           print('🔑 Sending Token (Start): ${token.substring(0, 20)}...');
+         }
+       }
 
       request.fields['name'] = _nameController.text;
       request.fields['price'] = _priceController.text;

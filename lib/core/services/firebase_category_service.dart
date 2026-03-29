@@ -30,6 +30,7 @@ class FirebaseCategoryService {
     required String description,
     required String imageUrl,
     required bool isActive,
+    String? mongoId,
   }) async {
     try {
       final docRef = await _firestore.collection('categories').add({
@@ -38,6 +39,7 @@ class FirebaseCategoryService {
         'description': description,
         'imageUrl': imageUrl,
         'isActive': isActive,
+        'mongoId': mongoId,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -55,6 +57,7 @@ class FirebaseCategoryService {
     required String description,
     String? imageUrl,
     required bool isActive,
+    String? mongoId,
   }) async {
     try {
       final Map<String, dynamic> updateData = {
@@ -67,6 +70,10 @@ class FirebaseCategoryService {
 
       if (imageUrl != null) {
         updateData['imageUrl'] = imageUrl;
+      }
+      
+      if (mongoId != null) {
+        updateData['mongoId'] = mongoId;
       }
 
       await _firestore

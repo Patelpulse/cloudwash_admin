@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:cloud_admin/core/config/app_config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -25,26 +27,20 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Authenticate with Firebase Auth directly
-      final userCredential =
-          await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
+      // 1. Authenticate with Custom Node.js Backend
+      final response = await http.post(
+        Uri.parse('${AppConfig.apiUrl}/admin/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'email': _emailController.text.trim(),
+          'password': _passwordController.text,
+        }),
       );
 
-      final user = userCredential.user;
+      if (response.statusCode == 200) {
+        final userData = json.decode(response.body);
 
-      if (user != null) {
-        // 2. Prepare admin data for local storage
-        final userData = {
-          'uid': user.uid,
-          'email': user.email,
-          'token': await user.getIdToken(), // Use Firebase ID Token
-          'role':
-              'admin', // Assume admin for now since they logged into admin panel
-        };
-
-        // 3. Save auth data
+        // 2. Save auth data (Already includes token, name, role, etc. from backend)
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('admin_data', json.encode(userData));
         await prefs.setBool('is_logged_in', true);
@@ -52,20 +48,13 @@ class _LoginScreenState extends State<LoginScreen> {
         if (mounted) {
           context.go('/');
         }
-      }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        String message = 'Login failed';
-        if (e.code == 'user-not-found') {
-          message = 'No user found for that email.';
-        } else if (e.code == 'wrong-password') {
-          message = 'Wrong password provided.';
-        } else {
-          message = e.message ?? 'Authentication failed';
+      } else {
+        final error = json.decode(response.body);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error['message'] ?? 'Login failed')),
+          );
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
       }
     } catch (e) {
       if (mounted) {
@@ -193,6 +182,11 @@ class _LoginScreenState extends State<LoginScreen> {
                           )
                         : const Text('Login', style: TextStyle(fontSize: 16)),
                   ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () => context.push('/register'),
+                  child: const Text('Don\'t have an account? Create Admin Account'),
                 ),
               ],
             ),

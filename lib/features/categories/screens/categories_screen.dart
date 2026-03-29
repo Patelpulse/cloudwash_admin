@@ -1,5 +1,5 @@
 import 'package:cloud_admin/core/theme/app_theme.dart';
-import 'package:cloud_admin/core/services/firebase_category_service.dart';
+import 'package:cloud_admin/core/services/api_category_service.dart';
 import 'package:cloud_admin/features/categories/widgets/category_card.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -12,9 +12,22 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  final _firebaseService = FirebaseCategoryService();
+  final _apiService = ApiCategoryService();
+  late Future<List<Map<String, dynamic>>> _categoriesFuture;
 
-  Future<void> _deleteCategory(String firebaseId, String? mongoId) async {
+  @override
+  void initState() {
+    super.initState();
+    _refreshCategories();
+  }
+
+  void _refreshCategories() {
+    setState(() {
+      _categoriesFuture = _apiService.getCategories();
+    });
+  }
+
+  Future<void> _deleteCategory(String id) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -36,13 +49,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
     if (confirmed == true) {
       try {
-        // Delete from Firebase
-        await _firebaseService.deleteCategory(firebaseId);
-
-        // TODO: Also delete from MongoDB backend if needed
-        // if (mongoId != null) {
-        //   await http.delete(Uri.parse('$apiUrl/categories/$mongoId'));
-        // }
+        await _apiService.deleteCategory(id);
+        _refreshCategories();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -67,87 +75,92 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Categories',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppTheme.primaryBlue,
-                ),
-              ),
-              Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.green.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_done,
-                            size: 16, color: Colors.green.shade700),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Firebase',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.green.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
+    return RefreshIndicator(
+      onRefresh: () async {
+        _refreshCategories();
+      },
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Categories',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryBlue,
                   ),
-                  const SizedBox(width: 12),
-                  const Icon(Icons.refresh, size: 20, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  const Text('Auto-refresh',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
+                ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.storage, size: 16, color: Colors.blue.shade700),
+                          const SizedBox(width: 6),
+                          Text(
+                            'MongoDB',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 20, color: Colors.grey),
+                      onPressed: _refreshCategories,
+                      tooltip: 'Refresh Data',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await context.push('/categories/add');
+                _refreshCategories();
+              },
+              icon: const Icon(
+                Icons.add,
+                size: 18,
+                color: Colors.white,
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () async {
-              await context.push('/categories/add');
-            },
-            icon: const Icon(
-              Icons.add,
-              size: 18,
-              color: Colors.white,
+              label: const Text('Add Main Category',
+                  style: TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryBlue,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
             ),
-            label: const Text('Add Main Category',
-                style: TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryBlue,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-          const SizedBox(height: 24),
-          _buildCategoryStream(context),
-        ],
+            const SizedBox(height: 24),
+            _buildCategoryContent(context),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCategoryStream(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _firebaseService.getCategories(),
+  Widget _buildCategoryContent(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _categoriesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -167,9 +180,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 Text('Error: ${snapshot.error}'),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () {
-                    setState(() {}); // Rebuild to retry
-                  },
+                  onPressed: _refreshCategories,
                   child: const Text('Retry'),
                 ),
               ],
@@ -188,12 +199,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     size: 64, color: Colors.grey.shade300),
                 const SizedBox(height: 16),
                 Text(
-                  'No categories found',
+                  'No categories found in MongoDB',
                   style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Add your first category to get started',
+                  'Add your first category using the button above',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
                 ),
               ],
@@ -241,18 +252,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               title: cat['name'] ?? 'Untitled',
               description: cat['description'] ?? 'No description',
               price: cat['price'] != null ? '₹${cat['price']}' : '₹0',
-              status: cat['isActive'] == true ? 'Active' : 'Inactive',
+              status: (cat['isActive'] == true || cat['isActive'] == 'true') ? 'Active' : 'Inactive',
               imageUrl: cat['imageUrl'],
               placeholderColor: Colors.grey.shade200,
               onEdit: () async {
-                // Pass both Firebase ID and data
-                final editData = {
-                  ...cat,
-                  'firebaseId': cat['id'], // Firebase ID
-                };
-                await context.push('/categories/add', extra: editData);
+                await context.push('/categories/add', extra: cat);
+                _refreshCategories();
               },
-              onDelete: () => _deleteCategory(cat['id'], cat['mongoId']),
+              onDelete: () => _deleteCategory(cat['_id']),
               onViewSubCategories: () =>
                   context.go('/sub-categories', extra: cat['name']),
             );

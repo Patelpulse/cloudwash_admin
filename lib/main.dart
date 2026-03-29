@@ -3,6 +3,7 @@ import 'package:cloud_admin/core/widgets/socket_listener_wrapper.dart';
 import 'package:cloud_admin/features/addons/screens/add_addon_screen.dart';
 import 'package:cloud_admin/features/addons/screens/addons_screen.dart';
 import 'package:cloud_admin/features/auth/screens/login_screen.dart';
+import 'package:cloud_admin/features/auth/screens/register_screen.dart';
 import 'package:cloud_admin/features/banners/screens/add_banner_screen.dart';
 import 'package:cloud_admin/features/banners/screens/banners_screen.dart';
 import 'package:cloud_admin/features/categories/screens/add_category_screen.dart';
@@ -76,6 +77,10 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
         GoRoute(
           path: '/login',
           builder: (context, state) => const LoginScreen(),
+        ),
+        GoRoute(
+          path: '/register',
+          builder: (context, state) => const RegisterScreen(),
         ),
         ShellRoute(
           pageBuilder: (context, state, child) {

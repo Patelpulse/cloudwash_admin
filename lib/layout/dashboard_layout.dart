@@ -234,61 +234,75 @@ class _DashboardHeaderState extends State<_DashboardHeader> {
                 Scaffold.of(context).openDrawer();
               },
             ),
-          Text(
-            _getTitle(context),
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          Expanded(
+            child: Text(
+              _getTitle(context),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
             ),
           ),
           const Spacer(),
-          InkWell(
-            onTap: () async {
-              await context.push('/profile');
-              _loadAdminData(); // Refresh on return
-            },
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundImage:
-                      _profileImage != null && _profileImage!.isNotEmpty
-                          ? NetworkImage(_profileImage!)
-                          : null,
-                  backgroundColor: Colors.blue.shade100,
-                  child: (_profileImage == null || _profileImage!.isEmpty)
-                      ? Text(
-                          _adminName.isNotEmpty
-                              ? _adminName[0].toUpperCase()
-                              : 'A',
-                          style: TextStyle(
-                              color: Colors.blue.shade800,
-                              fontWeight: FontWeight.bold),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _adminName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.black87,
+          Flexible(
+            fit: FlexFit.loose,
+            child: InkWell(
+              onTap: () async {
+                await context.push('/profile');
+                _loadAdminData(); // Refresh on return
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundImage:
+                        _profileImage != null && _profileImage!.isNotEmpty
+                            ? NetworkImage(_profileImage!)
+                            : null,
+                    backgroundColor: Colors.blue.shade100,
+                    child: (_profileImage == null || _profileImage!.isEmpty)
+                        ? Text(
+                            _adminName.isNotEmpty
+                                ? _adminName[0].toUpperCase()
+                                : 'A',
+                            style: TextStyle(
+                                color: Colors.blue.shade800,
+                                fontWeight: FontWeight.bold),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  if (MediaQuery.of(context).size.width > 600)
+                    Flexible(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _adminName,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          Text(
+                            _adminRole,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      _adminRole,
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 12),
