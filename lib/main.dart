@@ -24,6 +24,7 @@ import 'package:cloud_admin/features/testimonials/screens/testimonials_screen.da
 import 'package:cloud_admin/features/users/screens/users_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_about_us_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_hero_section_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_logo_section_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_stats_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_testimonials_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_why_choose_us_screen.dart';
@@ -319,6 +320,10 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                 GoRoute(
                   path: 'hero',
                   builder: (context, state) => const EditHeroSectionScreen(),
+                ),
+                GoRoute(
+                  path: 'logo',
+                  builder: (context, state) => const EditLogoSectionScreen(),
                 ),
                 GoRoute(
                   path: 'about',

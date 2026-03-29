@@ -48,6 +48,7 @@ SPA_ROUTES=(
   "profile"
   "web-landing"
   "web-landing/hero"
+  "web-landing/logo"
   "web-landing/about"
   "web-landing/stats"
   "web-landing/testimonials"

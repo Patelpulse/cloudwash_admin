@@ -34,10 +34,17 @@ class WebLandingScreen extends ConsumerWidget {
                 children: [
                   _SectionCard(
                     title: 'Hero Section',
-                    description: 'Edit main title, tagline, and hero image',
+                    description: 'Edit title, tagline, hero image and CTA text',
                     icon: Icons.view_carousel,
                     color: Colors.blue.shade100,
                     onTap: () => context.go('/web-landing/hero'),
+                  ),
+                  _SectionCard(
+                    title: 'Website Logo',
+                    description: 'Upload logo used on website navbar/footer',
+                    icon: Icons.branding_watermark_outlined,
+                    color: Colors.teal.shade100,
+                    onTap: () => context.go('/web-landing/logo'),
                   ),
                   _SectionCard(
                     title: 'About Us',
