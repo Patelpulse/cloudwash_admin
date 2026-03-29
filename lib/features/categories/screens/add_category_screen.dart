@@ -66,19 +66,46 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Step 1: Save to backend first (MongoDB + Cloudinary)
-      // This uploads image to Cloudinary and returns the URL
-      final backendResult = await _saveToBackend();
+      final firebaseService = FirebaseCategoryService();
+      final existingMongoId = _currentMongoId;
 
-      if (backendResult == null) {
-        throw Exception('Failed to save to backend');
+      String? imageUrl = _existingImageUrl;
+      String? mongoId = existingMongoId;
+
+      // Sync to backend only when we have a backend ID (for edit) or this is a new category.
+      // Some legacy Firebase docs don't have mongoId/_id, and calling /categories/null fails.
+      final canSyncBackend =
+          widget.categoryToEdit == null || existingMongoId != null;
+
+      if (canSyncBackend) {
+        final backendResult = await _saveToBackend();
+        final backendImageUrl = backendResult?['imageUrl']?.toString();
+        final backendMongoId = backendResult?['_id']?.toString();
+
+        if (backendImageUrl != null && backendImageUrl.isNotEmpty) {
+          imageUrl = backendImageUrl;
+        }
+
+        if (backendMongoId != null &&
+            backendMongoId.isNotEmpty &&
+            backendMongoId != 'null') {
+          mongoId = backendMongoId;
+        }
+      } else {
+        debugPrint(
+          'Skipping backend sync for category update: mongoId is missing.',
+        );
       }
 
-      final imageUrl = backendResult['imageUrl'] ?? _existingImageUrl;
-      // final mongoId = backendResult['_id']; // mongoId is not directly used here, but could be if needed
+      // Fallback: if backend upload didn't return an image URL, upload to Firebase Storage.
+      if (_selectedImage != null && (imageUrl == null || imageUrl.isEmpty)) {
+        imageUrl = await _uploadImageToFirebaseStorage(firebaseService);
+      }
 
-      // Step 2: Save to Firebase Firestore with Cloudinary URL
-      final firebaseService = FirebaseCategoryService();
+      if (widget.categoryToEdit == null &&
+          (imageUrl == null || imageUrl.isEmpty)) {
+        throw Exception('Image upload failed. Please try another image.');
+      }
 
       if (widget.categoryToEdit != null &&
           widget.categoryToEdit!['firebaseId'] != null) {
@@ -90,6 +117,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl,
           isActive: _isActive,
+          mongoId: mongoId,
         );
       } else {
         // Create new in Firebase
@@ -99,6 +127,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl ?? '',
           isActive: _isActive,
+          mongoId: mongoId,
         );
       }
 
@@ -127,19 +156,70 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     }
   }
 
-  // Upload image to Cloudinary via backend (web compatible) - This method is no longer needed as _saveToBackend handles it
-  // Future<String?> _uploadImageToCloudinary() async {
-  //   // ... (removed as per new logic)
-  // }
+  String? get _currentMongoId {
+    final rawId =
+        widget.categoryToEdit?['_id'] ?? widget.categoryToEdit?['mongoId'];
+    if (rawId == null) return null;
+    final value = rawId.toString().trim();
+    if (value.isEmpty || value.toLowerCase() == 'null') return null;
+    return value;
+  }
+
+  String _resolveMimeType(XFile file) {
+    final pickedMimeType = file.mimeType;
+    if (pickedMimeType != null && pickedMimeType.startsWith('image/')) {
+      return pickedMimeType;
+    }
+
+    final lowerPath = file.path.toLowerCase();
+    if (lowerPath.endsWith('.png')) return 'image/png';
+    if (lowerPath.endsWith('.webp')) return 'image/webp';
+    if (lowerPath.endsWith('.gif')) return 'image/gif';
+    if (lowerPath.endsWith('.bmp')) return 'image/bmp';
+    if (lowerPath.endsWith('.svg')) return 'image/svg+xml';
+    return 'image/jpeg';
+  }
+
+  String _resolveFileExtension(XFile file) {
+    final mimeType = _resolveMimeType(file);
+    if (mimeType == 'image/png') return 'png';
+    if (mimeType == 'image/webp') return 'webp';
+    if (mimeType == 'image/gif') return 'gif';
+    if (mimeType == 'image/bmp') return 'bmp';
+    if (mimeType == 'image/svg+xml') return 'svg';
+    return 'jpg';
+  }
+
+  Future<String?> _uploadImageToFirebaseStorage(
+    FirebaseCategoryService firebaseService,
+  ) async {
+    if (_selectedImage == null) return null;
+    try {
+      final bytes = await _selectedImage!.readAsBytes();
+      final fileName =
+          'category_${DateTime.now().millisecondsSinceEpoch}.${_resolveFileExtension(_selectedImage!)}';
+      return await firebaseService.uploadCategoryImage(bytes, fileName);
+    } catch (e) {
+      debugPrint('Firebase image upload fallback failed: $e');
+      return null;
+    }
+  }
 
   // Save to backend and return response data
   Future<Map<String, dynamic>?> _saveToBackend() async {
     try {
       final baseUrl = AppConfig.apiUrl;
-      final isEditing = widget.categoryToEdit != null;
-      final url = isEditing
-          ? '$baseUrl/categories/${widget.categoryToEdit!['_id']}'
-          : '$baseUrl/categories';
+      final mongoId = _currentMongoId;
+      final isEditing = widget.categoryToEdit != null && mongoId != null;
+
+      if (widget.categoryToEdit != null && !isEditing) {
+        // Legacy Firebase docs may not have backend mongo ID.
+        // Skip backend PUT instead of sending /categories/null.
+        return null;
+      }
+
+      final url =
+          isEditing ? '$baseUrl/categories/$mongoId' : '$baseUrl/categories';
 
       var uri = Uri.parse(url);
       var request = http.MultipartRequest(isEditing ? 'PUT' : 'POST', uri);
@@ -148,17 +228,10 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       request.fields['price'] = _priceController.text;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
-      // If editing and no new image is selected, send the existing image URL
-      if (isEditing && _selectedImage == null && _existingImageUrl != null) {
-        request.fields['imageUrl'] = _existingImageUrl!;
-      }
 
       // Add image file if selected
       if (_selectedImage != null) {
-        String mimeType = 'image/jpeg';
-        if (_selectedImage!.path.endsWith('.png')) {
-          mimeType = 'image/png';
-        }
+        final mimeType = _resolveMimeType(_selectedImage!);
 
         if (kIsWeb) {
           var bytes = await _selectedImage!.readAsBytes();
@@ -185,25 +258,29 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
         final responseBody = await response.stream.bytesToString();
         // Parse JSON response to get imageUrl and _id
         try {
-          final jsonResponse = json.decode(responseBody);
+          final jsonResponse =
+              json.decode(responseBody) as Map<String, dynamic>;
           return {
-            'imageUrl':
-                jsonResponse['imageUrl'], // Adjust based on actual response
-            '_id': jsonResponse['_id'], // Adjust based on actual response
+            'imageUrl': jsonResponse['imageUrl'],
+            '_id': jsonResponse['_id'],
           };
         } catch (e) {
-          print('Response parse error: $e');
-          return null;
+          debugPrint('Category backend response parse error: $e');
+          return {
+            'imageUrl': _existingImageUrl,
+            '_id': mongoId,
+          };
         }
       } else {
         final errorBody = await response.stream.bytesToString();
-        print(
-            'Backend save failed with status ${response.statusCode}: $errorBody');
+        debugPrint(
+          'Category backend save failed with status ${response.statusCode}: $errorBody',
+        );
         return null;
       }
     } catch (e) {
-      print('Backend save error: $e');
-      rethrow;
+      debugPrint('Category backend save error: $e');
+      return null;
     }
   }
 

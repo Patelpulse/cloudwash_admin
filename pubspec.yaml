@@ -39,7 +39,7 @@ dependencies:
   fl_chart: ^0.66.0
 
   # UI & Assets
-  google_fonts: ^6.1.0
+  google_fonts: ^6.3.3
   flutter_svg: ^2.0.9
   intl: ^0.19.0
   
@@ -69,5 +69,4 @@ flutter:
   assets:
     - .env
     - assets/sounds/
-
 

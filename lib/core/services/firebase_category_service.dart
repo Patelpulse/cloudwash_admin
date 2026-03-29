@@ -30,9 +30,10 @@ class FirebaseCategoryService {
     required String description,
     required String imageUrl,
     required bool isActive,
+    String? mongoId,
   }) async {
     try {
-      final docRef = await _firestore.collection('categories').add({
+      final data = <String, dynamic>{
         'name': name,
         'price': price,
         'description': description,
@@ -40,7 +41,13 @@ class FirebaseCategoryService {
         'isActive': isActive,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      if (mongoId != null && mongoId.trim().isNotEmpty) {
+        data['mongoId'] = mongoId.trim();
+      }
+
+      final docRef = await _firestore.collection('categories').add(data);
       return docRef.id;
     } catch (e) {
       throw Exception('Failed to create category: $e');
@@ -55,6 +62,7 @@ class FirebaseCategoryService {
     required String description,
     String? imageUrl,
     required bool isActive,
+    String? mongoId,
   }) async {
     try {
       final Map<String, dynamic> updateData = {
@@ -67,6 +75,10 @@ class FirebaseCategoryService {
 
       if (imageUrl != null) {
         updateData['imageUrl'] = imageUrl;
+      }
+
+      if (mongoId != null && mongoId.trim().isNotEmpty) {
+        updateData['mongoId'] = mongoId.trim();
       }
 
       await _firestore

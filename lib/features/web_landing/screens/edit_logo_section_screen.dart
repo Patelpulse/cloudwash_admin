@@ -62,37 +62,28 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   }
 
   Future<void> _saveLogo() async {
-    if (_selectedLogoBytes == null && (_logoUrl ?? '').trim().isEmpty) {
+    if (_selectedLogoBytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a logo first')),
+        const SnackBar(content: Text('Please choose a logo to upload first')),
       );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
-      request.fields['logoUrl'] = _logoUrl ?? '';
+      http.Response response = await _saveLogoAsFile();
 
-      if (_selectedLogoBytes != null) {
-        final mimeParts = (_selectedLogoMimeType ?? 'image/png').split('/');
-        final mediaType = mimeParts.length == 2
-            ? MediaType(mimeParts[0], mimeParts[1])
-            : MediaType('image', 'png');
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'logo',
-            _selectedLogoBytes!,
-            filename: 'website_logo.png',
-            contentType: mediaType,
-          ),
-        );
+      // Backend Cloudinary can fail on some deployments.
+      // Fallback to storing selected logo as data URL via `logoUrl` field.
+      if (response.statusCode != 200) {
+        response = await _saveLogoAsDataUrl();
       }
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
       if (response.statusCode == 200) {
         if (!mounted) return;
+        setState(() {
+          _selectedLogoBytes = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -100,7 +91,6 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
             ),
           ),
         );
-        _selectedLogoBytes = null;
         await _fetchLogo();
       } else {
         throw Exception('Failed with status ${response.statusCode}');
@@ -113,6 +103,37 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<http.Response> _saveLogoAsFile() async {
+    final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    final mimeParts = (_selectedLogoMimeType ?? 'image/png').split('/');
+    final mediaType = mimeParts.length == 2
+        ? MediaType(mimeParts[0], mimeParts[1])
+        : MediaType('image', 'png');
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'logo',
+        _selectedLogoBytes!,
+        filename: 'website_logo.png',
+        contentType: mediaType,
+      ),
+    );
+
+    final streamedResponse = await request.send();
+    return http.Response.fromStream(streamedResponse);
+  }
+
+  Future<http.Response> _saveLogoAsDataUrl() async {
+    final mimeType = _selectedLogoMimeType ?? 'image/png';
+    final dataUrl =
+        'data:$mimeType;base64,${base64Encode(_selectedLogoBytes!)}';
+
+    final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    request.fields['logoUrl'] = dataUrl;
+
+    final streamedResponse = await request.send();
+    return http.Response.fromStream(streamedResponse);
   }
 
   Future<void> _removeLogo() async {
