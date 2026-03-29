@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_admin/core/config/app_config.dart';
 import 'package:cloud_admin/features/web_landing/models/hero_section_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -33,13 +34,15 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   Future<void> _fetchLogo() async {
     setState(() => _isLoading = true);
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/hero'));
-      if (response.statusCode == 200) {
-        final hero = HeroSectionModel.fromJson(jsonDecode(response.body));
-        setState(() {
-          _logoUrl = hero.logoUrl;
-        });
-      }
+      final apiLogo = await _fetchLogoFromApi();
+      final firestoreLogo = await _fetchLogoFromFirestore();
+      final resolvedLogo =
+          (firestoreLogo ?? '').trim().isNotEmpty ? firestoreLogo : apiLogo;
+
+      if (!mounted) return;
+      setState(() {
+        _logoUrl = (resolvedLogo ?? '').trim();
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -71,29 +74,43 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
 
     setState(() => _isLoading = true);
     try {
-      http.Response response = await _saveLogoAsFile();
+      final previousLogo = (_logoUrl ?? '').trim();
+      final selectedLogoDataUrl = _buildDataUrl(
+        _selectedLogoBytes!,
+        _selectedLogoMimeType,
+      );
 
-      // Backend Cloudinary can fail on some deployments.
-      // Fallback to storing selected logo as data URL via `logoUrl` field.
+      http.Response response = await _saveLogoAsFile();
       if (response.statusCode != 200) {
         response = await _saveLogoAsDataUrl();
       }
 
-      if (response.statusCode == 200) {
+      final apiLogoFromResponse = response.statusCode == 200
+          ? _extractLogoFromResponse(response.body)
+          : null;
+      final apiUpdated = apiLogoFromResponse != null &&
+          apiLogoFromResponse.trim().isNotEmpty &&
+          apiLogoFromResponse.trim() != previousLogo;
+
+      final firestoreUpdated = await _saveLogoToFirestore(selectedLogoDataUrl);
+
+      if (apiUpdated || firestoreUpdated) {
         if (!mounted) return;
         setState(() {
           _selectedLogoBytes = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Logo updated. Website navbar/footer will use this logo.',
+              firestoreUpdated
+                  ? 'Logo updated. Website navbar/footer will use this logo.'
+                  : 'Logo updated via API.',
             ),
           ),
         );
         await _fetchLogo();
       } else {
-        throw Exception('Failed with status ${response.statusCode}');
+        throw Exception('Logo update was not persisted on backend/firestore');
       }
     } catch (e) {
       if (!mounted) return;
@@ -125,12 +142,11 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   }
 
   Future<http.Response> _saveLogoAsDataUrl() async {
-    final mimeType = _selectedLogoMimeType ?? 'image/png';
-    final dataUrl =
-        'data:$mimeType;base64,${base64Encode(_selectedLogoBytes!)}';
-
     final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
-    request.fields['logoUrl'] = dataUrl;
+    request.fields['logoUrl'] = _buildDataUrl(
+      _selectedLogoBytes!,
+      _selectedLogoMimeType,
+    );
 
     final streamedResponse = await request.send();
     return http.Response.fromStream(streamedResponse);
@@ -139,12 +155,20 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   Future<void> _removeLogo() async {
     setState(() => _isLoading = true);
     try {
-      final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
-      request.fields['logoUrl'] = '';
+      var apiUpdated = false;
+      try {
+        final request =
+            http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+        request.fields['logoUrl'] = '';
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-      if (response.statusCode == 200) {
+        final streamedResponse = await request.send();
+        final response = await http.Response.fromStream(streamedResponse);
+        apiUpdated = response.statusCode == 200;
+      } catch (_) {}
+
+      final firestoreUpdated = await _saveLogoToFirestore('');
+
+      if (apiUpdated || firestoreUpdated) {
         if (!mounted) return;
         setState(() {
           _selectedLogoBytes = null;
@@ -154,7 +178,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
           const SnackBar(content: Text('Logo removed')),
         );
       } else {
-        throw Exception('Failed with status ${response.statusCode}');
+        throw Exception('Failed to remove logo from backend and firestore');
       }
     } catch (e) {
       if (!mounted) return;
@@ -282,5 +306,66 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<String?> _fetchLogoFromApi() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/hero'));
+      if (response.statusCode != 200) return null;
+      final hero = HeroSectionModel.fromJson(jsonDecode(response.body));
+      final logo = hero.logoUrl.trim();
+      return logo.isEmpty ? null : logo;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _fetchLogoFromFirestore() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('web_landing')
+          .doc('hero')
+          .get();
+      final data = doc.data();
+      if (data == null) return null;
+      final logo = (data['logoUrl'] ?? '').toString().trim();
+      return logo.isEmpty ? null : logo;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _saveLogoToFirestore(String logoUrl) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('web_landing')
+          .doc('hero')
+          .set(
+        {
+          'logoUrl': logoUrl,
+          'updatedAt': DateTime.now().toUtc().toIso8601String(),
+        },
+        SetOptions(merge: true),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _buildDataUrl(Uint8List bytes, String? mimeType) {
+    final resolvedMimeType = mimeType ?? 'image/png';
+    return 'data:$resolvedMimeType;base64,${base64Encode(bytes)}';
+  }
+
+  String? _extractLogoFromResponse(String body) {
+    try {
+      final parsed = jsonDecode(body);
+      if (parsed is Map<String, dynamic>) {
+        final logo = parsed['logoUrl'];
+        if (logo is String) return logo;
+      }
+    } catch (_) {}
+    return null;
   }
 }
