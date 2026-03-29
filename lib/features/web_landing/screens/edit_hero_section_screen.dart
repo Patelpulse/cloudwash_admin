@@ -31,6 +31,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
   String? _logoUrl;
   Uint8List? _selectedImageBytes;
   Uint8List? _selectedLogoBytes;
+  String? _selectedLogoMimeType;
 
   // Use http for simple requests as seen elsewhere, or Dio. I'll use http for file upload consistency with backend
   // Assuming BASE_URL is available via flutter_dotenv or AppConfig
@@ -105,6 +106,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
       final bytes = await image.readAsBytes();
       setState(() {
         _selectedLogoBytes = bytes;
+        _selectedLogoMimeType = image.mimeType;
       });
     }
   }
@@ -137,12 +139,16 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
       }
 
       if (_selectedLogoBytes != null) {
+        final mimeParts = (_selectedLogoMimeType ?? 'image/png').split('/');
+        final mediaType = mimeParts.length == 2
+            ? MediaType(mimeParts[0], mimeParts[1])
+            : MediaType('image', 'png');
         request.files.add(
           http.MultipartFile.fromBytes(
             'logo',
             _selectedLogoBytes!,
             filename: 'hero_logo.png',
-            contentType: MediaType('image', 'png'),
+            contentType: mediaType,
           ),
         );
       }
@@ -167,6 +173,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final embeddedLogoBytes = _decodeDataImage((_logoUrl ?? '').trim());
     if (_isLoading && _taglineController.text.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -250,8 +257,13 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
                               ? Image.memory(_selectedLogoBytes!,
                                   fit: BoxFit.contain)
                               : (_logoUrl != null && _logoUrl!.isNotEmpty
-                                  ? Image.network(_logoUrl!,
-                                      fit: BoxFit.contain)
+                                  ? (embeddedLogoBytes != null
+                                      ? Image.memory(
+                                          embeddedLogoBytes,
+                                          fit: BoxFit.contain,
+                                        )
+                                      : Image.network(_logoUrl!,
+                                          fit: BoxFit.contain))
                                   : const Icon(
                                       Icons.image_outlined,
                                       size: 44,
@@ -357,5 +369,16 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
         ),
       ),
     );
+  }
+
+  Uint8List? _decodeDataImage(String imageUrl) {
+    if (!imageUrl.startsWith('data:image')) return null;
+    final commaIndex = imageUrl.indexOf(',');
+    if (commaIndex == -1 || commaIndex >= imageUrl.length - 1) return null;
+    try {
+      return base64Decode(imageUrl.substring(commaIndex + 1));
+    } catch (_) {
+      return null;
+    }
   }
 }

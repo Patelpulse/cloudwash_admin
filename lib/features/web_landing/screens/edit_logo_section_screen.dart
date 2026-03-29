@@ -21,6 +21,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   bool _isLoading = false;
   String? _logoUrl;
   Uint8List? _selectedLogoBytes;
+  String? _selectedLogoMimeType;
   final String _baseUrl = AppConfig.apiUrl;
 
   @override
@@ -56,6 +57,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     final bytes = await pickedFile.readAsBytes();
     setState(() {
       _selectedLogoBytes = bytes;
+      _selectedLogoMimeType = pickedFile.mimeType;
     });
   }
 
@@ -73,12 +75,16 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       request.fields['logoUrl'] = _logoUrl ?? '';
 
       if (_selectedLogoBytes != null) {
+        final mimeParts = (_selectedLogoMimeType ?? 'image/png').split('/');
+        final mediaType = mimeParts.length == 2
+            ? MediaType(mimeParts[0], mimeParts[1])
+            : MediaType('image', 'png');
         request.files.add(
           http.MultipartFile.fromBytes(
             'logo',
             _selectedLogoBytes!,
             filename: 'website_logo.png',
-            contentType: MediaType('image', 'png'),
+            contentType: mediaType,
           ),
         );
       }
@@ -142,6 +148,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   @override
   Widget build(BuildContext context) {
     final hasRemoteLogo = (_logoUrl ?? '').trim().isNotEmpty;
+    final embeddedRemoteLogoBytes = _decodeDataImage((_logoUrl ?? '').trim());
     return Scaffold(
       appBar: AppBar(
         title: const Text('Website Logo'),
@@ -189,7 +196,13 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
                             ? Image.memory(_selectedLogoBytes!,
                                 fit: BoxFit.contain)
                             : hasRemoteLogo
-                                ? Image.network(_logoUrl!, fit: BoxFit.contain)
+                                ? (embeddedRemoteLogoBytes != null
+                                    ? Image.memory(
+                                        embeddedRemoteLogoBytes,
+                                        fit: BoxFit.contain,
+                                      )
+                                    : Image.network(_logoUrl!,
+                                        fit: BoxFit.contain))
                                 : const Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
@@ -237,5 +250,16 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
               ),
             ),
     );
+  }
+
+  Uint8List? _decodeDataImage(String imageUrl) {
+    if (!imageUrl.startsWith('data:image')) return null;
+    final commaIndex = imageUrl.indexOf(',');
+    if (commaIndex == -1 || commaIndex >= imageUrl.length - 1) return null;
+    try {
+      return base64Decode(imageUrl.substring(commaIndex + 1));
+    } catch (_) {
+      return null;
+    }
   }
 }
