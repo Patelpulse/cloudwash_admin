@@ -42,17 +42,110 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_admin/core/firebase/firebase_options.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   usePathUrlStrategy();
+  Object? startupError;
+  StackTrace? startupStackTrace;
+  var isLoggedIn = false;
+
   try {
     await dotenv.load(fileName: ".env");
   } catch (_) {}
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  final prefs = await SharedPreferences.getInstance();
-  final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
 
-  runApp(ProviderScope(child: CloudAdminApp(isLoggedIn: isLoggedIn)));
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+  } catch (error, stackTrace) {
+    startupError = error;
+    startupStackTrace = stackTrace;
+  }
+
+  runApp(
+    ProviderScope(
+      child: startupError == null
+          ? CloudAdminApp(isLoggedIn: isLoggedIn)
+          : StartupErrorApp(
+              error: startupError.toString(),
+              stackTrace: startupStackTrace?.toString(),
+            ),
+    ),
+  );
+}
+
+class StartupErrorApp extends StatelessWidget {
+  final String error;
+  final String? stackTrace;
+
+  const StartupErrorApp({
+    super.key,
+    required this.error,
+    this.stackTrace,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 720),
+            margin: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'CloudWash Admin failed to start',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    error,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  if (stackTrace != null && stackTrace!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    SelectableText(
+                      stackTrace!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class CloudAdminApp extends StatefulWidget {

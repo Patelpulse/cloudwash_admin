@@ -7,7 +7,7 @@ if [ ! -d "flutter" ]; then
   git clone https://github.com/flutter/flutter.git -b stable --depth 1
 fi
 
-export PATH="$PATH:$PWD/flutter/bin"
+export PATH="$PWD/flutter/bin:$PATH"
 flutter doctor -v
 
 # Create a dummy .env if it doesn't exist (to satisfy dotenv.load())
