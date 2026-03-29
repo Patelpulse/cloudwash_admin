@@ -5,6 +5,7 @@ class HeroSectionModel {
   final String description;
   final String buttonText;
   final String imageUrl;
+  final String logoUrl;
   final String? youtubeUrl;
   final bool isActive;
 
@@ -15,6 +16,7 @@ class HeroSectionModel {
     required this.description,
     required this.buttonText,
     required this.imageUrl,
+    this.logoUrl = '',
     this.youtubeUrl,
     required this.isActive,
   });
@@ -27,6 +29,7 @@ class HeroSectionModel {
       description: json['description'] ?? '',
       buttonText: json['buttonText'] ?? '',
       imageUrl: json['imageUrl'] ?? '',
+      logoUrl: json['logoUrl'] ?? '',
       youtubeUrl: json['youtubeUrl'],
       isActive: json['isActive'] ?? true,
     );
@@ -40,6 +43,7 @@ class HeroSectionModel {
       'description': description,
       'buttonText': buttonText,
       'imageUrl': imageUrl,
+      'logoUrl': logoUrl,
       'youtubeUrl': youtubeUrl,
       'isActive': isActive,
     };

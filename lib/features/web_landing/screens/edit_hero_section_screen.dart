@@ -28,7 +28,9 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
   bool _isLoading = false;
   bool _isActive = true;
   String? _imageUrl;
+  String? _logoUrl;
   Uint8List? _selectedImageBytes;
+  Uint8List? _selectedLogoBytes;
 
   // Use http for simple requests as seen elsewhere, or Dio. I'll use http for file upload consistency with backend
   // Assuming BASE_URL is available via flutter_dotenv or AppConfig
@@ -71,6 +73,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
         _youtubeUrlController.text = hero.youtubeUrl ?? '';
         setState(() {
           _imageUrl = hero.imageUrl;
+          _logoUrl = hero.logoUrl;
           _isActive = hero.isActive;
         });
       }
@@ -94,6 +97,18 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
     }
   }
 
+  Future<void> _pickLogo() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image != null) {
+      final bytes = await image.readAsBytes();
+      setState(() {
+        _selectedLogoBytes = bytes;
+      });
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -107,6 +122,7 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
       request.fields['description'] = _descriptionController.text;
       request.fields['buttonText'] = _buttonTextController.text;
       request.fields['youtubeUrl'] = _youtubeUrlController.text;
+      request.fields['logoUrl'] = _logoUrl ?? '';
       request.fields['isActive'] = _isActive.toString();
 
       if (_selectedImageBytes != null) {
@@ -115,6 +131,17 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
             'image',
             _selectedImageBytes!,
             filename: 'hero_image.png',
+            contentType: MediaType('image', 'png'),
+          ),
+        );
+      }
+
+      if (_selectedLogoBytes != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'logo',
+            _selectedLogoBytes!,
+            filename: 'hero_logo.png',
             contentType: MediaType('image', 'png'),
           ),
         );
@@ -163,36 +190,81 @@ class _EditHeroSectionScreenState extends ConsumerState<EditHeroSectionScreen> {
             children: [
               // Image Section
               Center(
-                child: Column(
+                child: Wrap(
+                  spacing: 20,
+                  runSpacing: 20,
+                  alignment: WrapAlignment.center,
                   children: [
-                    Container(
-                      height: 200,
-                      width: 400,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: _selectedImageBytes != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(_selectedImageBytes!,
-                                  fit: BoxFit.cover),
-                            )
-                          : (_imageUrl != null && _imageUrl!.isNotEmpty
+                    Column(
+                      children: [
+                        Container(
+                          height: 200,
+                          width: 400,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: _selectedImageBytes != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: Image.network(_imageUrl!,
-                                      fit: BoxFit.cover),
+                                  child: Image.memory(
+                                    _selectedImageBytes!,
+                                    fit: BoxFit.cover,
+                                  ),
                                 )
-                              : const Icon(Icons.image,
-                                  size: 50, color: Colors.grey)),
+                              : (_imageUrl != null && _imageUrl!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: Image.network(
+                                        _imageUrl!,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.image,
+                                      size: 50,
+                                      color: Colors.grey,
+                                    )),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _pickImage,
+                          icon: const Icon(Icons.upload),
+                          label: const Text('Change Hero Image'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.upload),
-                      label: const Text('Change Hero Image'),
+                    Column(
+                      children: [
+                        Container(
+                          width: 160,
+                          height: 160,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: _selectedLogoBytes != null
+                              ? Image.memory(_selectedLogoBytes!,
+                                  fit: BoxFit.contain)
+                              : (_logoUrl != null && _logoUrl!.isNotEmpty
+                                  ? Image.network(_logoUrl!,
+                                      fit: BoxFit.contain)
+                                  : const Icon(
+                                      Icons.image_outlined,
+                                      size: 44,
+                                      color: Colors.grey,
+                                    )),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _pickLogo,
+                          icon: const Icon(Icons.upload_file),
+                          label: const Text('Upload Logo'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
