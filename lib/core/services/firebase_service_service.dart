@@ -13,8 +13,12 @@ class FirebaseServiceService {
     required String imageUrl,
     required bool isActive,
     String? unit,
+    int? displayOrder,
   }) async {
     try {
+      final nextOrder =
+          displayOrder ?? await _getNextDisplayOrder(defaultValue: 1000);
+
       final docRef = await _firestore.collection('services').add({
         'name': name,
         'subCategoryId': subCategoryId,
@@ -24,6 +28,7 @@ class FirebaseServiceService {
         'imageUrl': imageUrl,
         'isActive': isActive,
         'unit': unit ?? 'piece',
+        'displayOrder': nextOrder,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -44,6 +49,7 @@ class FirebaseServiceService {
     String? imageUrl,
     required bool isActive,
     String? unit,
+    int? displayOrder,
   }) async {
     try {
       final Map<String, dynamic> updateData = {
@@ -56,6 +62,10 @@ class FirebaseServiceService {
         'unit': unit ?? 'piece',
         'updatedAt': FieldValue.serverTimestamp(),
       };
+
+      if (displayOrder != null) {
+        updateData['displayOrder'] = displayOrder;
+      }
 
       if (imageUrl != null) {
         updateData['imageUrl'] = imageUrl;
@@ -80,7 +90,7 @@ class FirebaseServiceService {
   Stream<List<Map<String, dynamic>>> getServices() {
     return _firestore
         .collection('services')
-        .orderBy('createdAt', descending: true)
+        .orderBy('displayOrder')
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
@@ -90,6 +100,39 @@ class FirebaseServiceService {
         };
       }).toList();
     });
+  }
+
+  /// Bulk update display order for services
+  Future<void> updateDisplayOrders(List<Map<String, dynamic>> services) async {
+    final batch = _firestore.batch();
+    for (var i = 0; i < services.length; i++) {
+      final id = services[i]['id'] as String;
+      // use spaced ordering so new items can slot in without full reorder
+      batch.update(
+        _firestore.collection('services').doc(id),
+        {'displayOrder': i * 10, 'updatedAt': FieldValue.serverTimestamp()},
+      );
+    }
+    await batch.commit();
+  }
+
+  /// Compute the next available display order value
+  Future<int> _getNextDisplayOrder({int defaultValue = 0}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('services')
+          .orderBy('displayOrder', descending: true)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isNotEmpty) {
+        final currentMax = (snapshot.docs.first.data()['displayOrder'] ?? 0);
+        if (currentMax is int) return currentMax + 10;
+        if (currentMax is double) return currentMax.toInt() + 10;
+      }
+      return defaultValue;
+    } catch (_) {
+      return defaultValue;
+    }
   }
 
   /// Get services by sub-category ID

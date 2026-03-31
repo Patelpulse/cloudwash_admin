@@ -10,14 +10,18 @@ class FirebaseSubCategoryService {
     required String description,
     required String imageUrl,
     required bool isActive,
+    int? displayOrder,
   }) async {
     try {
+      final nextOrder =
+          displayOrder ?? await _getNextDisplayOrder(defaultValue: 100000);
       final docRef = await _firestore.collection('subCategories').add({
         'name': name,
         'categoryId': categoryId,
         'description': description,
         'imageUrl': imageUrl,
         'isActive': isActive,
+        'displayOrder': nextOrder,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -35,6 +39,7 @@ class FirebaseSubCategoryService {
     required String description,
     String? imageUrl,
     required bool isActive,
+    int? displayOrder,
   }) async {
     try {
       final Map<String, dynamic> updateData = {
@@ -44,6 +49,10 @@ class FirebaseSubCategoryService {
         'isActive': isActive,
         'updatedAt': FieldValue.serverTimestamp(),
       };
+
+      if (displayOrder != null) {
+        updateData['displayOrder'] = displayOrder;
+      }
 
       if (imageUrl != null) {
         updateData['imageUrl'] = imageUrl;
@@ -71,15 +80,24 @@ class FirebaseSubCategoryService {
   Stream<List<Map<String, dynamic>>> getSubCategories() {
     return _firestore
         .collection('subCategories')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final subs = snapshot.docs.map((doc) {
         return {
           'id': doc.id,
           ...doc.data(),
         };
       }).toList();
+
+      subs.sort((a, b) {
+        final aOrder = (a['displayOrder'] ?? 100000) as num;
+        final bOrder = (b['displayOrder'] ?? 100000) as num;
+        if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+        final aName = (a['name'] ?? '') as String;
+        final bName = (b['name'] ?? '') as String;
+        return aName.compareTo(bName);
+      });
+      return subs;
     });
   }
 
@@ -89,15 +107,24 @@ class FirebaseSubCategoryService {
     return _firestore
         .collection('subCategories')
         .where('categoryId', isEqualTo: categoryId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final subs = snapshot.docs.map((doc) {
         return {
           'id': doc.id,
           ...doc.data(),
         };
       }).toList();
+
+      subs.sort((a, b) {
+        final aOrder = (a['displayOrder'] ?? 100000) as num;
+        final bOrder = (b['displayOrder'] ?? 100000) as num;
+        if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+        final aName = (a['name'] ?? '') as String;
+        final bName = (b['name'] ?? '') as String;
+        return aName.compareTo(bName);
+      });
+      return subs;
     });
   }
 
@@ -115,6 +142,41 @@ class FirebaseSubCategoryService {
       return null;
     } catch (e) {
       throw Exception('Failed to get sub-category: $e');
+    }
+  }
+
+  /// Bulk update display order for sub-categories
+  Future<void> updateDisplayOrders(
+      List<Map<String, dynamic>> subCategories) async {
+    final batch = _firestore.batch();
+    for (var i = 0; i < subCategories.length; i++) {
+      final id = subCategories[i]['id'] as String;
+      batch.update(
+        _firestore.collection('subCategories').doc(id),
+        {
+          'displayOrder': i * 10,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<int> _getNextDisplayOrder({int defaultValue = 100000}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('subCategories')
+          .orderBy('displayOrder', descending: true)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isNotEmpty) {
+        final current = snapshot.docs.first.data()['displayOrder'];
+        if (current is int) return current + 10;
+        if (current is double) return current.toInt() + 10;
+      }
+      return defaultValue;
+    } catch (_) {
+      return defaultValue;
     }
   }
 }

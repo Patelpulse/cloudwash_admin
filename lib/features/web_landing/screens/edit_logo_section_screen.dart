@@ -21,6 +21,7 @@ class EditLogoSectionScreen extends ConsumerStatefulWidget {
 class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   bool _isLoading = false;
   String? _logoUrl;
+  double _logoHeight = 140;
   Uint8List? _selectedLogoBytes;
   String? _selectedLogoMimeType;
   final String _baseUrl = AppConfig.apiUrl;
@@ -34,14 +35,21 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   Future<void> _fetchLogo() async {
     setState(() => _isLoading = true);
     try {
-      final apiLogo = await _fetchLogoFromApi();
-      final firestoreLogo = await _fetchLogoFromFirestore();
-      final resolvedLogo =
-          (firestoreLogo ?? '').trim().isNotEmpty ? firestoreLogo : apiLogo;
+      final apiData = await _fetchLogoFromApi();
+      final firestoreData = await _fetchLogoFromFirestore();
+
+      final resolvedLogo = (firestoreData?['logoUrl'] ?? '').toString().trim().isNotEmpty
+          ? firestoreData
+          : apiData;
 
       if (!mounted) return;
       setState(() {
-        _logoUrl = (resolvedLogo ?? '').trim();
+        _logoUrl = (resolvedLogo?['logoUrl'] ?? '').toString().trim();
+        final rawHeight = resolvedLogo?['logoHeight'];
+        final parsedHeight = rawHeight is num
+            ? rawHeight.toDouble()
+            : double.tryParse('${rawHeight ?? ''}');
+        _logoHeight = (parsedHeight ?? _logoHeight).clamp(60, 240);
       });
     } catch (e) {
       if (!mounted) return;
@@ -65,36 +73,40 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   }
 
   Future<void> _saveLogo() async {
-    if (_selectedLogoBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please choose a logo to upload first')),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
     try {
       final previousLogo = (_logoUrl ?? '').trim();
-      final selectedLogoDataUrl = _buildDataUrl(
-        _selectedLogoBytes!,
-        _selectedLogoMimeType,
-      );
+      String? selectedLogoDataUrl;
 
-      http.Response response = await _saveLogoAsFile();
-      if (response.statusCode != 200) {
-        response = await _saveLogoAsDataUrl();
+      http.Response? response;
+      if (_selectedLogoBytes != null) {
+        selectedLogoDataUrl = _buildDataUrl(
+          _selectedLogoBytes!,
+          _selectedLogoMimeType,
+        );
+
+        response = await _saveLogoAsFile();
+        if (response.statusCode != 200) {
+          response = await _saveLogoAsDataUrl();
+        }
+      } else if (previousLogo.isNotEmpty) {
+        response = await _saveHeightOnlyToApi(previousLogo);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please choose a logo to upload first')),
+        );
+        return;
       }
 
-      final apiLogoFromResponse = response.statusCode == 200
-          ? _extractLogoFromResponse(response.body)
+      final apiLogoFromResponse = (response?.statusCode == 200)
+          ? _extractLogoFromResponse(response!.body)
           : null;
-      final apiUpdated = apiLogoFromResponse != null &&
-          apiLogoFromResponse.trim().isNotEmpty &&
-          apiLogoFromResponse.trim() != previousLogo;
+      final apiSucceeded = (response?.statusCode == 200);
 
-      final firestoreUpdated = await _saveLogoToFirestore(selectedLogoDataUrl);
+      final firestoreUpdated = await _saveLogoToFirestore(
+          selectedLogoDataUrl ?? previousLogo);
 
-      if (apiUpdated || firestoreUpdated) {
+      if (apiSucceeded || firestoreUpdated) {
         if (!mounted) return;
         setState(() {
           _selectedLogoBytes = null;
@@ -128,6 +140,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     final mediaType = mimeParts.length == 2
         ? MediaType(mimeParts[0], mimeParts[1])
         : MediaType('image', 'png');
+    request.fields['logoHeight'] = _logoHeight.toStringAsFixed(0);
     request.files.add(
       http.MultipartFile.fromBytes(
         'logo',
@@ -147,7 +160,16 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       _selectedLogoBytes!,
       _selectedLogoMimeType,
     );
+    request.fields['logoHeight'] = _logoHeight.toStringAsFixed(0);
 
+    final streamedResponse = await request.send();
+    return http.Response.fromStream(streamedResponse);
+  }
+
+  Future<http.Response> _saveHeightOnlyToApi(String logoUrl) async {
+    final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    request.fields['logoUrl'] = logoUrl;
+    request.fields['logoHeight'] = _logoHeight.toStringAsFixed(0);
     final streamedResponse = await request.send();
     return http.Response.fromStream(streamedResponse);
   }
@@ -160,6 +182,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
         final request =
             http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
         request.fields['logoUrl'] = '';
+        request.fields['logoHeight'] = '140';
 
         final streamedResponse = await request.send();
         final response = await http.Response.fromStream(streamedResponse);
@@ -173,6 +196,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
         setState(() {
           _selectedLogoBytes = null;
           _logoUrl = '';
+          _logoHeight = 140;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Logo removed')),
@@ -264,6 +288,31 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
                                     ],
                                   ),
                       ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text(
+                            'Logo max height',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text('${_logoHeight.round()} px',
+                              style: const TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                      Slider(
+                        min: 60,
+                        max: 240,
+                        divisions: 18,
+                        value: _logoHeight,
+                        label: '${_logoHeight.round()} px',
+                        onChanged: _isLoading
+                            ? null
+                            : (v) => setState(() => _logoHeight = v),
+                      ),
                       const SizedBox(height: 18),
                       Row(
                         children: [
@@ -308,19 +357,23 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     }
   }
 
-  Future<String?> _fetchLogoFromApi() async {
+  Future<Map<String, dynamic>?> _fetchLogoFromApi() async {
     try {
       final response = await http.get(Uri.parse('$_baseUrl/hero'));
       if (response.statusCode != 200) return null;
       final hero = HeroSectionModel.fromJson(jsonDecode(response.body));
       final logo = hero.logoUrl.trim();
-      return logo.isEmpty ? null : logo;
+      final height = hero.logoHeight ?? 140;
+      return {
+        'logoUrl': logo.isEmpty ? null : logo,
+        'logoHeight': height,
+      };
     } catch (_) {
       return null;
     }
   }
 
-  Future<String?> _fetchLogoFromFirestore() async {
+  Future<Map<String, dynamic>?> _fetchLogoFromFirestore() async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('web_landing')
@@ -329,7 +382,14 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       final data = doc.data();
       if (data == null) return null;
       final logo = (data['logoUrl'] ?? '').toString().trim();
-      return logo.isEmpty ? null : logo;
+      final heightRaw = data['logoHeight'] ?? data['logo_height'];
+      double? parsedHeight;
+      if (heightRaw is num) parsedHeight = heightRaw.toDouble();
+      parsedHeight ??= double.tryParse('$heightRaw');
+      return {
+        'logoUrl': logo.isEmpty ? null : logo,
+        'logoHeight': parsedHeight,
+      };
     } catch (_) {
       return null;
     }
@@ -343,6 +403,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
           .set(
         {
           'logoUrl': logoUrl,
+          'logoHeight': _logoHeight,
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         },
         SetOptions(merge: true),
@@ -363,7 +424,13 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       final parsed = jsonDecode(body);
       if (parsed is Map<String, dynamic>) {
         final logo = parsed['logoUrl'];
-        if (logo is String) return logo;
+        if (logo is String) {
+          final height = parsed['logoHeight'];
+          if (height is num) {
+            _logoHeight = height.toDouble().clamp(60, 240);
+          }
+          return logo;
+        }
       }
     } catch (_) {}
     return null;

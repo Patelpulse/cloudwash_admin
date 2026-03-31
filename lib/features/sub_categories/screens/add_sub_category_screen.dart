@@ -27,6 +27,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
   // Controllers
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _displayOrderController = TextEditingController();
 
   // State variables
   bool _isActive = true;
@@ -71,6 +72,9 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
     _descriptionController.text = sub['description'] ?? '';
     _isActive = sub['isActive'] == true;
     _existingImageUrl = sub['imageUrl'];
+    if (sub['displayOrder'] != null) {
+      _displayOrderController.text = sub['displayOrder'].toString();
+    }
 
     // Set parent category ID
     _selectedCategoryId = sub['categoryId'];
@@ -109,6 +113,8 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
 
     try {
       String? imageUrl = _existingImageUrl;
+      final parsedDisplayOrder =
+          int.tryParse(_displayOrderController.text.trim());
 
       // Try to upload image to backend/Cloudinary if selected
       if (_selectedImage != null) {
@@ -134,6 +140,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl,
           isActive: _isActive,
+          displayOrder: parsedDisplayOrder,
         );
       } else {
         // Create new in Firebase
@@ -143,6 +150,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
           description: _descriptionController.text,
           imageUrl: imageUrl ?? '',
           isActive: _isActive,
+          displayOrder: parsedDisplayOrder,
         );
       }
 
@@ -188,6 +196,10 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
       request.fields['category'] = _selectedCategoryId!;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
+      if (_displayOrderController.text.trim().isNotEmpty) {
+        request.fields['displayOrder'] =
+            _displayOrderController.text.trim();
+      }
 
       if (_selectedImage != null) {
         String mimeType = 'image/jpeg';
@@ -238,6 +250,7 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _displayOrderController.dispose();
     super.dispose();
   }
 
@@ -338,6 +351,23 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
                     label: 'Description',
                     hint: 'Detailed description...',
                     maxLines: 3,
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildTextField(
+                    controller: _displayOrderController,
+                    label: 'Display Order (smaller = higher)',
+                    hint: 'e.g. 20',
+                    isNumeric: true,
+                    requiredField: false,
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildTextField(
+                    controller: _displayOrderController,
+                    label: 'Display Order (smaller = higher)',
+                    hint: 'e.g. 20',
+                    isNumeric: true,
                   ),
                   const SizedBox(height: 24),
 
@@ -461,6 +491,8 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
     required String label,
     required String hint,
     int maxLines = 1,
+    bool isNumeric = false,
+    bool requiredField = true,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +506,9 @@ class _AddSubCategoryScreenState extends State<AddSubCategoryScreen> {
         TextFormField(
           controller: controller,
           maxLines: maxLines,
+          keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) {
+            if (!requiredField) return null;
             if (value == null || value.isEmpty) return 'Required';
             return null;
           },

@@ -1,0 +1,11 @@
+flutter/
+build/
+.dart_tool/
+.pub/
+.pub-cache/
+.idea/
+.vercel/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.log
+.DS_Store

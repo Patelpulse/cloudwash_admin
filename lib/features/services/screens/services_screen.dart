@@ -174,6 +174,19 @@ class _ServicesScreenState extends State<ServicesScreen> {
               ),
               Row(
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/services/reorder'),
+                    icon: const Icon(Icons.swap_vert, color: Colors.black87),
+                    label: const Text('Reorder'),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade300),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

@@ -74,6 +74,13 @@ class WebLandingScreen extends ConsumerWidget {
                     color: Colors.pink.shade100,
                     onTap: () => context.go('/web-landing/testimonials'),
                   ),
+                  _SectionCard(
+                    title: 'Footer',
+                    description: 'Contact info, quick links & copyright line',
+                    icon: Icons.format_align_center,
+                    color: Colors.indigo.shade100,
+                    onTap: () => context.go('/web-landing/footer'),
+                  ),
                 ],
               ),
             ),

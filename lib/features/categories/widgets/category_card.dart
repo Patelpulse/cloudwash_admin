@@ -1,4 +1,5 @@
 import 'package:cloud_admin/core/theme/app_theme.dart';
+import 'package:cloud_admin/core/utils/image_data_utils.dart';
 import 'package:flutter/material.dart';
 
 class CategoryCard extends StatelessWidget {
@@ -29,6 +30,10 @@ class CategoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final embeddedImageBytes = decodeDataImage(imageUrl);
+    final hasNetworkImage =
+        (imageUrl ?? '').isNotEmpty && embeddedImageBytes == null;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -54,16 +59,31 @@ class CategoryCard extends StatelessWidget {
                 color: placeholderColor,
                 alignment: Alignment.center,
                 child: imageUrl != null && imageUrl!.isNotEmpty
-                    ? Image.network(
-                        imageUrl!,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        errorBuilder: (context, error, stackTrace) => Icon(
-                            Icons.broken_image,
-                            size: 64,
-                            color: Colors.white.withValues(alpha: 0.5)),
-                      )
+                    ? embeddedImageBytes != null
+                        ? Image.memory(
+                            embeddedImageBytes,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                          )
+                        : hasNetworkImage
+                            ? Image.network(
+                                imageUrl!,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(
+                                  Icons.broken_image,
+                                  size: 64,
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                ),
+                              )
+                            : Icon(
+                                Icons.broken_image,
+                                size: 64,
+                                color: Colors.white.withValues(alpha: 0.5),
+                              )
                     : Icon(Icons.image,
                         size: 64, color: Colors.white.withValues(alpha: 0.5)),
               ),

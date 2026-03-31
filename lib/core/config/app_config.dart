@@ -1,6 +1,9 @@
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AppConfig {
+  static const String _defaultProdApiUrl =
+      'https://cloudwashapi.onrender.com/api';
+
   static String get apiUrl {
     // 1. Try dart-define (ideal for Vercel/CI)
     const defineUrl = String.fromEnvironment('API_URL');
@@ -11,6 +14,6 @@ class AppConfig {
     if (envUrl != null && envUrl.isNotEmpty) return envUrl;
 
     // 3. Fallback
-    return 'http://localhost:5000/api';
+    return _defaultProdApiUrl;
   }
 }

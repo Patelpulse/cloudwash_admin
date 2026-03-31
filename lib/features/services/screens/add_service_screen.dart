@@ -32,6 +32,7 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
   final _priceController = TextEditingController();
   final _durationController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _displayOrderController = TextEditingController();
 
   // State
   String? _selectedCategoryId;
@@ -110,6 +111,9 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
     _descriptionController.text = s['description'] ?? '';
     _isActive = s['isActive'] == true;
     _existingImageUrl = s['imageUrl'];
+    if (s['displayOrder'] != null) {
+      _displayOrderController.text = s['displayOrder'].toString();
+    }
 
     _selectedCategoryId = s['categoryId'];
     _selectedSubCategoryId = s['subCategoryId'];
@@ -148,6 +152,8 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
 
     try {
       String? imageUrl = _existingImageUrl;
+      final parsedDisplayOrder =
+          int.tryParse(_displayOrderController.text.trim());
 
       // Try to upload image to backend/Cloudinary if selected
       if (_selectedImage != null) {
@@ -176,6 +182,7 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
           imageUrl: imageUrl,
           isActive: _isActive,
           unit: 'piece',
+          displayOrder: parsedDisplayOrder,
         );
       } else {
         // Create new in Firebase
@@ -188,6 +195,7 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
           imageUrl: imageUrl ?? '',
           isActive: _isActive,
           unit: 'piece',
+          displayOrder: parsedDisplayOrder,
         );
       }
 
@@ -237,6 +245,10 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
       request.fields['duration'] = _durationController.text;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
+      if (_displayOrderController.text.trim().isNotEmpty) {
+        request.fields['displayOrder'] =
+            _displayOrderController.text.trim();
+      }
 
       if (_selectedImage != null) {
         String mimeType = 'image/jpeg';
@@ -288,6 +300,7 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
     _priceController.dispose();
     _durationController.dispose();
     _descriptionController.dispose();
+    _displayOrderController.dispose();
     super.dispose();
   }
 
@@ -460,6 +473,14 @@ class _AddServiceScreenState extends State<AddServiceScreen> {
                         controller: _durationController,
                         label: 'Duration (mins)',
                         hint: 'e.g. 60',
+                        isNumeric: true,
+                      )),
+                      const SizedBox(width: 24),
+                      Expanded(
+                          child: _buildTextField(
+                        controller: _displayOrderController,
+                        label: 'Display Order (optional)',
+                        hint: 'Lower shows first',
                         isNumeric: true,
                       )),
                       const SizedBox(width: 24),

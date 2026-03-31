@@ -17,8 +17,11 @@ import 'package:cloud_admin/features/notifications/screens/notifications_screen.
 import 'package:cloud_admin/features/profile/screens/profile_screen.dart';
 import 'package:cloud_admin/features/services/screens/add_service_screen.dart';
 import 'package:cloud_admin/features/services/screens/services_screen.dart';
+import 'package:cloud_admin/features/services/screens/reorder_services_screen.dart';
 import 'package:cloud_admin/features/sub_categories/screens/add_sub_category_screen.dart';
 import 'package:cloud_admin/features/sub_categories/screens/sub_categories_screen.dart';
+import 'package:cloud_admin/features/categories/screens/reorder_categories_screen.dart';
+import 'package:cloud_admin/features/sub_categories/screens/reorder_sub_categories_screen.dart';
 import 'package:cloud_admin/features/testimonials/screens/add_testimonial_screen.dart';
 import 'package:cloud_admin/features/testimonials/screens/testimonials_screen.dart';
 import 'package:cloud_admin/features/users/screens/users_screen.dart';
@@ -28,6 +31,7 @@ import 'package:cloud_admin/features/web_landing/screens/edit_logo_section_scree
 import 'package:cloud_admin/features/web_landing/screens/edit_stats_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_testimonials_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/edit_why_choose_us_screen.dart';
+import 'package:cloud_admin/features/web_landing/screens/edit_footer_screen.dart';
 import 'package:cloud_admin/features/web_landing/screens/web_landing_screen.dart';
 import 'package:cloud_admin/layout/dashboard_layout.dart';
 import 'package:flutter/material.dart';
@@ -206,6 +210,11 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                     return AddCategoryScreen(categoryToEdit: categoryToEdit);
                   },
                 ),
+                GoRoute(
+                  path: 'reorder',
+                  builder: (context, state) =>
+                      const ReorderCategoriesScreen(),
+                ),
               ],
             ),
             GoRoute(
@@ -238,6 +247,15 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                         subCategoryToEdit: subCategoryToEdit);
                   },
                 ),
+                GoRoute(
+                  path: 'reorder',
+                  builder: (context, state) {
+                    final initial =
+                        state.extra is String ? state.extra as String : null;
+                    return ReorderSubCategoriesScreen(
+                        initialCategoryId: initial);
+                  },
+                ),
               ],
             ),
             GoRoute(
@@ -265,6 +283,10 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                     final serviceToEdit = state.extra as Map<String, dynamic>?;
                     return AddServiceScreen(serviceToEdit: serviceToEdit);
                   },
+                ),
+                GoRoute(
+                  path: 'reorder',
+                  builder: (context, state) => const ReorderServicesScreen(),
                 ),
               ],
             ),
@@ -340,6 +362,10 @@ class _CloudAdminAppState extends State<CloudAdminApp> {
                 GoRoute(
                   path: 'why-choose-us',
                   builder: (context, state) => const EditWhyChooseUsScreen(),
+                ),
+                GoRoute(
+                  path: 'footer',
+                  builder: (context, state) => const EditFooterScreen(),
                 ),
               ],
             ),

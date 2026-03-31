@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:cloud_admin/core/theme/app_theme.dart';
 import 'package:cloud_admin/core/services/firebase_category_service.dart';
+import 'package:cloud_admin/core/utils/image_data_utils.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 import 'package:flutter/material.dart';
 import 'package:cloud_admin/core/config/app_config.dart';
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AddCategoryScreen extends StatefulWidget {
   final Map<String, dynamic>? categoryToEdit;
@@ -24,6 +26,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _displayOrderController = TextEditingController();
   bool _isActive = true;
   XFile? _selectedImage;
   String? _existingImageUrl;
@@ -39,6 +42,9 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       _descriptionController.text = cat['description'] ?? '';
       _isActive = cat['isActive'] == true;
       _existingImageUrl = cat['imageUrl'];
+      if (cat['displayOrder'] != null) {
+        _displayOrderController.text = cat['displayOrder'].toString();
+      }
     }
   }
 
@@ -68,9 +74,12 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     try {
       final firebaseService = FirebaseCategoryService();
       final existingMongoId = _currentMongoId;
+      final parsedDisplayOrder =
+          int.tryParse(_displayOrderController.text.trim());
 
       String? imageUrl = _existingImageUrl;
       String? mongoId = existingMongoId;
+      final failureReasons = <String>[];
 
       // Sync to backend only when we have a backend ID (for edit) or this is a new category.
       // Some legacy Firebase docs don't have mongoId/_id, and calling /categories/null fails.
@@ -81,6 +90,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
         final backendResult = await _saveToBackend();
         final backendImageUrl = backendResult?['imageUrl']?.toString();
         final backendMongoId = backendResult?['_id']?.toString();
+        final backendError = backendResult?['error']?.toString();
 
         if (backendImageUrl != null && backendImageUrl.isNotEmpty) {
           imageUrl = backendImageUrl;
@@ -91,20 +101,47 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
             backendMongoId != 'null') {
           mongoId = backendMongoId;
         }
+
+        if (backendError != null && backendError.isNotEmpty) {
+          failureReasons.add('Backend: $backendError');
+        }
       } else {
         debugPrint(
           'Skipping backend sync for category update: mongoId is missing.',
         );
       }
 
-      // Fallback: if backend upload didn't return an image URL, upload to Firebase Storage.
+      // Fallback 1: direct Cloudinary upload (works even when backend sync fails).
+      if (_selectedImage != null && (imageUrl == null || imageUrl.isEmpty)) {
+        imageUrl = await _uploadImageToCloudinary();
+        if (imageUrl == null || imageUrl.isEmpty) {
+          failureReasons.add('Cloudinary (admin upload) failed');
+        }
+      }
+
+      // Fallback 2: legacy Firebase Storage upload.
       if (_selectedImage != null && (imageUrl == null || imageUrl.isEmpty)) {
         imageUrl = await _uploadImageToFirebaseStorage(firebaseService);
+        if (imageUrl == null || imageUrl.isEmpty) {
+          failureReasons.add('Firebase Storage upload failed');
+        }
+      }
+
+      // Fallback 3: inline data URL (keeps category creation working when all
+      // external image hosts are unavailable).
+      if (_selectedImage != null && (imageUrl == null || imageUrl.isEmpty)) {
+        imageUrl = await _buildInlineDataImageUrl();
+        if (imageUrl == null || imageUrl.isEmpty) {
+          failureReasons.add(
+              'Inline image fallback failed (use image smaller than 750 KB)');
+        }
       }
 
       if (widget.categoryToEdit == null &&
           (imageUrl == null || imageUrl.isEmpty)) {
-        throw Exception('Image upload failed. Please try another image.');
+        throw Exception(
+          'Image upload failed. ${failureReasons.join(' | ')}',
+        );
       }
 
       if (widget.categoryToEdit != null &&
@@ -118,6 +155,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           imageUrl: imageUrl,
           isActive: _isActive,
           mongoId: mongoId,
+          displayOrder: parsedDisplayOrder,
         );
       } else {
         // Create new in Firebase
@@ -128,6 +166,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           imageUrl: imageUrl ?? '',
           isActive: _isActive,
           mongoId: mongoId,
+          displayOrder: parsedDisplayOrder,
         );
       }
 
@@ -196,13 +235,101 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     if (_selectedImage == null) return null;
     try {
       final bytes = await _selectedImage!.readAsBytes();
+      final mimeType = _resolveMimeType(_selectedImage!);
       final fileName =
           'category_${DateTime.now().millisecondsSinceEpoch}.${_resolveFileExtension(_selectedImage!)}';
-      return await firebaseService.uploadCategoryImage(bytes, fileName);
+      return await firebaseService.uploadCategoryImage(
+        bytes,
+        fileName,
+        contentType: mimeType,
+      );
     } catch (e) {
       debugPrint('Firebase image upload fallback failed: $e');
       return null;
     }
+  }
+
+  Future<String?> _buildInlineDataImageUrl() async {
+    if (_selectedImage == null) return null;
+    try {
+      final bytes = await _selectedImage!.readAsBytes();
+      const maxInlineBytes = 750 * 1024;
+      if (bytes.length > maxInlineBytes) {
+        debugPrint(
+          'Inline data URL fallback skipped: image is larger than 750 KB.',
+        );
+        return null;
+      }
+      final mimeType = _resolveMimeType(_selectedImage!);
+      return 'data:$mimeType;base64,${base64Encode(bytes)}';
+    } catch (e) {
+      debugPrint('Inline data URL fallback failed: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _uploadImageToCloudinary() async {
+    if (_selectedImage == null) return null;
+
+    final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME']?.trim();
+    final uploadPreset = dotenv.env['CLOUDINARY_UPLOAD_PRESET']?.trim();
+
+    if (cloudName == null ||
+        cloudName.isEmpty ||
+        uploadPreset == null ||
+        uploadPreset.isEmpty) {
+      debugPrint(
+        'Cloudinary upload skipped: CLOUDINARY_CLOUD_NAME or CLOUDINARY_UPLOAD_PRESET missing.',
+      );
+      return null;
+    }
+
+    try {
+      final uri =
+          Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
+      final request = http.MultipartRequest('POST', uri)
+        ..fields['upload_preset'] = uploadPreset
+        ..fields['folder'] = 'cloud_wash_categories';
+
+      final mimeType = _resolveMimeType(_selectedImage!);
+
+      if (kIsWeb) {
+        final bytes = await _selectedImage!.readAsBytes();
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            bytes,
+            filename: _selectedImage!.name,
+            contentType: MediaType.parse(mimeType),
+          ),
+        );
+      } else {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'file',
+            _selectedImage!.path,
+            contentType: MediaType.parse(mimeType),
+          ),
+        );
+      }
+
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final parsed = json.decode(responseBody) as Map<String, dynamic>;
+        final secureUrl = parsed['secure_url']?.toString();
+        if (secureUrl != null && secureUrl.isNotEmpty) return secureUrl;
+      } else {
+        debugPrint(
+          'Cloudinary upload failed with status ${response.statusCode}: $responseBody',
+        );
+      }
+    } catch (e) {
+      debugPrint('Cloudinary upload fallback failed: $e');
+    }
+
+    return null;
   }
 
   // Save to backend and return response data
@@ -228,6 +355,9 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
       request.fields['price'] = _priceController.text;
       request.fields['description'] = _descriptionController.text;
       request.fields['isActive'] = _isActive.toString();
+      if (_displayOrderController.text.trim().isNotEmpty) {
+        request.fields['displayOrder'] = _displayOrderController.text.trim();
+      }
 
       // Add image file if selected
       if (_selectedImage != null) {
@@ -273,14 +403,33 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
         }
       } else {
         final errorBody = await response.stream.bytesToString();
+        String parsedError = errorBody;
+        try {
+          final parsed = json.decode(errorBody) as Map<String, dynamic>;
+          final message = parsed['message']?.toString().trim();
+          final detail = parsed['error']?.toString().trim();
+          parsedError = [message, detail]
+              .where((part) => part != null && part.isNotEmpty)
+              .cast<String>()
+              .join(' - ');
+          if (parsedError.isEmpty) {
+            parsedError = errorBody;
+          }
+        } catch (_) {}
+
         debugPrint(
-          'Category backend save failed with status ${response.statusCode}: $errorBody',
+          'Category backend save failed with status ${response.statusCode}: $parsedError',
         );
-        return null;
+        return {
+          'error':
+              'status ${response.statusCode}${parsedError.isNotEmpty ? ': $parsedError' : ''}',
+        };
       }
     } catch (e) {
       debugPrint('Category backend save error: $e');
-      return null;
+      return {
+        'error': e.toString(),
+      };
     }
   }
 
@@ -289,11 +438,13 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     _nameController.dispose();
     _priceController.dispose();
     _descriptionController.dispose();
+    _displayOrderController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final embeddedExistingImageBytes = decodeDataImage(_existingImageUrl);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Form(
@@ -367,6 +518,15 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
                   const SizedBox(height: 24),
 
                   _buildTextField(
+                    controller: _displayOrderController,
+                    label: 'Display Order (smaller = higher)',
+                    hint: 'e.g. 10',
+                    isNumeric: true,
+                    requiredField: false,
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildTextField(
                     controller: _descriptionController,
                     label: 'Description',
                     hint: 'Short description of the category...',
@@ -383,7 +543,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
                       Switch(
                         value: _isActive,
                         onChanged: (v) => setState(() => _isActive = v),
-                        activeColor: AppTheme.successGreen,
+                        activeThumbColor: AppTheme.successGreen,
                       ),
                       Text(_isActive ? ' Active' : ' Inactive'),
                     ],
@@ -422,20 +582,29 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
                           : (_existingImageUrl != null
                               ? ClipRRect(
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    _existingImageUrl!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error,
-                                            stackTrace) =>
-                                        const Center(
-                                            child: Icon(Icons.broken_image)),
-                                  ),
+                                  child: embeddedExistingImageBytes != null
+                                      ? Image.memory(
+                                          embeddedExistingImageBytes,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Image.network(
+                                          _existingImageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (
+                                            context,
+                                            error,
+                                            stackTrace,
+                                          ) =>
+                                              const Center(
+                                            child: Icon(Icons.broken_image),
+                                          ),
+                                        ),
                                 )
                               : Center(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.cloud_upload_outlined,
+                                      const Icon(Icons.cloud_upload_outlined,
                                           size: 40,
                                           color: AppTheme.primaryBlue),
                                       const SizedBox(height: 8),
@@ -499,6 +668,7 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
     required String hint,
     int maxLines = 1,
     bool isNumeric = false,
+    bool requiredField = true,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -514,9 +684,8 @@ class _AddCategoryScreenState extends State<AddCategoryScreen> {
           maxLines: maxLines,
           keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
           validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter $label';
-            }
+            if (!requiredField) return null;
+            if (value == null || value.isEmpty) return 'Please enter $label';
             return null;
           },
           decoration: InputDecoration(

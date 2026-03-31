@@ -8,12 +8,15 @@ class FirebaseCategoryService {
 
   /// Upload image to Firebase Storage
   Future<String> uploadCategoryImage(
-      Uint8List imageBytes, String fileName) async {
+    Uint8List imageBytes,
+    String fileName, {
+    String contentType = 'image/jpeg',
+  }) async {
     try {
       final ref = _storage.ref().child('categories/$fileName');
       final uploadTask = ref.putData(
         imageBytes,
-        SettableMetadata(contentType: 'image/jpeg'),
+        SettableMetadata(contentType: contentType),
       );
       final snapshot = await uploadTask;
       final downloadUrl = await snapshot.ref.getDownloadURL();
@@ -31,14 +34,18 @@ class FirebaseCategoryService {
     required String imageUrl,
     required bool isActive,
     String? mongoId,
+    int? displayOrder,
   }) async {
     try {
+      final effectiveOrder =
+          displayOrder ?? await _getNextDisplayOrder(defaultValue: 100000);
       final data = <String, dynamic>{
         'name': name,
         'price': price,
         'description': description,
         'imageUrl': imageUrl,
         'isActive': isActive,
+        'displayOrder': effectiveOrder,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -63,6 +70,7 @@ class FirebaseCategoryService {
     String? imageUrl,
     required bool isActive,
     String? mongoId,
+    int? displayOrder,
   }) async {
     try {
       final Map<String, dynamic> updateData = {
@@ -72,6 +80,10 @@ class FirebaseCategoryService {
         'isActive': isActive,
         'updatedAt': FieldValue.serverTimestamp(),
       };
+
+      if (displayOrder != null) {
+        updateData['displayOrder'] = displayOrder;
+      }
 
       if (imageUrl != null) {
         updateData['imageUrl'] = imageUrl;
@@ -103,15 +115,24 @@ class FirebaseCategoryService {
   Stream<List<Map<String, dynamic>>> getCategories() {
     return _firestore
         .collection('categories')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final categories = snapshot.docs.map((doc) {
         return {
           'id': doc.id,
           ...doc.data(),
         };
       }).toList();
+
+      categories.sort((a, b) {
+        final aOrder = (a['displayOrder'] ?? 100000) as num;
+        final bOrder = (b['displayOrder'] ?? 100000) as num;
+        if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+        final aName = (a['name'] ?? '') as String;
+        final bName = (b['name'] ?? '') as String;
+        return aName.compareTo(bName);
+      });
+      return categories;
     });
   }
 
@@ -129,6 +150,40 @@ class FirebaseCategoryService {
       return null;
     } catch (e) {
       throw Exception('Failed to get category: $e');
+    }
+  }
+
+  /// Bulk update display order for categories
+  Future<void> updateDisplayOrders(List<Map<String, dynamic>> categories) async {
+    final batch = _firestore.batch();
+    for (var i = 0; i < categories.length; i++) {
+      final id = categories[i]['id'] as String;
+      batch.update(
+        _firestore.collection('categories').doc(id),
+        {
+          'displayOrder': i * 10,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      );
+    }
+    await batch.commit();
+  }
+
+  Future<int> _getNextDisplayOrder({int defaultValue = 100000}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('categories')
+          .orderBy('displayOrder', descending: true)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isNotEmpty) {
+        final current = snapshot.docs.first.data()['displayOrder'];
+        if (current is int) return current + 10;
+        if (current is double) return current.toInt() + 10;
+      }
+      return defaultValue;
+    } catch (_) {
+      return defaultValue;
     }
   }
 }

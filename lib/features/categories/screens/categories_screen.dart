@@ -120,23 +120,39 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () async {
-              await context.push('/categories/add');
-            },
-            icon: const Icon(
-              Icons.add,
-              size: 18,
-              color: Colors.white,
-            ),
-            label: const Text('Add Main Category',
-                style: TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryBlue,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => context.push('/categories/reorder'),
+                icon: const Icon(Icons.swap_vert, color: Colors.black87),
+                label: const Text('Reorder'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.grey.shade300),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await context.push('/categories/add');
+                },
+                icon: const Icon(
+                  Icons.add,
+                  size: 18,
+                  color: Colors.white,
+                ),
+                label: const Text('Add Main Category',
+                    style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryBlue,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           _buildCategoryStream(context),
