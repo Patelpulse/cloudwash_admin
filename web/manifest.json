@@ -1,11 +1,11 @@
 {
-    "name": "Cloud Wash Admin",
-    "short_name": "Cloud Wash Admin",
+    "name": "Admin Cloud wash",
+    "short_name": "Admin Cloud wash",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Cloud Wash Admin - Manage your laundry business",
+    "description": "Admin Cloud wash - Manage your laundry business",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
