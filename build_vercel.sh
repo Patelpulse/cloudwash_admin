@@ -13,14 +13,14 @@ flutter doctor -v
 # Create a dummy .env if it doesn't exist (to satisfy dotenv.load())
 if [ ! -f .env ]; then
   echo "Creating dummy .env file"
-  echo "API_URL=https://cloudwashapi.onrender.com/api" > .env
+  echo "API_URL=https://admin.cloudwash.in/api" > .env
 fi
 
 # Fetch dependencies
 flutter pub get
 
 # Build Flutter Web
-flutter build web --release --dart-define=API_URL="${API_URL:-https://cloudwashapi.onrender.com/api}"
+flutter build web --release --dart-define=API_URL="${API_URL:-https://admin.cloudwash.in/api}"
 
 # Some Vercel deployments may ignore SPA rewrites. Generate per-route index files
 # so direct deep links (for example /login) keep working.
@@ -53,6 +53,7 @@ SPA_ROUTES=(
   "web-landing/stats"
   "web-landing/testimonials"
   "web-landing/why-choose-us"
+  "web-landing/footer"
 )
 
 for route in "${SPA_ROUTES[@]}"; do

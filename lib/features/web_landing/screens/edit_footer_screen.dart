@@ -20,6 +20,7 @@ class _EditFooterScreenState extends State<EditFooterScreen> {
 
   final List<Map<String, String>> _exploreLinks = [];
   final List<Map<String, String>> _serviceLinks = [];
+  final List<Map<String, String>> _policyLinks = [];
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -52,6 +53,13 @@ class _EditFooterScreenState extends State<EditFooterScreen> {
 
       final explore = (data['exploreLinks'] as List?) ?? [];
       final services = (data['serviceLinks'] as List?) ?? [];
+      final policies = (data['policyLinks'] as List?) ??
+          [
+            {'label': 'Privacy Policy', 'route': '/privacy'},
+            {'label': 'Terms of Service', 'route': '/terms'},
+            {'label': 'Child Protection', 'route': '/child-protection'},
+            {'label': 'Sitemap', 'route': '/'},
+          ];
       _exploreLinks
         ..clear()
         ..addAll(explore.map((e) => {
@@ -61,6 +69,12 @@ class _EditFooterScreenState extends State<EditFooterScreen> {
       _serviceLinks
         ..clear()
         ..addAll(services.map((e) => {
+              'label': e['label']?.toString() ?? '',
+              'route': e['route']?.toString() ?? '/',
+            }));
+      _policyLinks
+        ..clear()
+        ..addAll(policies.map((e) => {
               'label': e['label']?.toString() ?? '',
               'route': e['route']?.toString() ?? '/',
             }));
@@ -89,6 +103,7 @@ class _EditFooterScreenState extends State<EditFooterScreen> {
         },
         'exploreLinks': _exploreLinks,
         'serviceLinks': _serviceLinks,
+        'policyLinks': _policyLinks,
         'updatedAt': DateTime.now().toIso8601String(),
       }, SetOptions(merge: true));
 
@@ -218,6 +233,12 @@ class _EditFooterScreenState extends State<EditFooterScreen> {
                   _LinksEditor(
                     title: 'Services Links',
                     items: _serviceLinks,
+                    onChanged: () => setState(() {}),
+                  ),
+                  const SizedBox(height: 24),
+                  _LinksEditor(
+                    title: 'Bottom Policy Links',
+                    items: _policyLinks,
                     onChanged: () => setState(() {}),
                   ),
                   const SizedBox(height: 40),

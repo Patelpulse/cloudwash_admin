@@ -108,13 +108,12 @@ class _SubCategoriesScreenState extends State<SubCategoriesScreen> {
                   OutlinedButton.icon(
                     onPressed: () async {
                       await context.push('/sub-categories/reorder',
-                          extra: _selectedCategoryName == 'All Categories'
+                          extra: _selectedCategoryFilter == 'All Categories'
                               ? null
                               : _categoryMap.entries
                                   .firstWhere(
-                                      (e) => e.value == _selectedCategoryName,
-                                      orElse: () =>
-                                          const MapEntry('', ''))
+                                      (e) => e.value == _selectedCategoryFilter,
+                                      orElse: () => const MapEntry('', ''))
                                   .key);
                     },
                     icon: const Icon(Icons.swap_vert, color: Colors.black87),

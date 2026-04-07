@@ -19,8 +19,23 @@ class EditLogoSectionScreen extends ConsumerStatefulWidget {
 }
 
 class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
+  static const String _phoneKey = 'phone';
+  static const String _tabletKey = 'tablet';
+  static const String _websiteKey = 'website';
+  static const List<String> _deviceOrder = [
+    _phoneKey,
+    _tabletKey,
+    _websiteKey,
+  ];
+
   bool _isLoading = false;
   String? _logoUrl;
+  Map<String, String> _logoByDevice = {
+    _phoneKey: '',
+    _tabletKey: '',
+    _websiteKey: '',
+  };
+  String _selectedDeviceType = _websiteKey;
   double _logoHeight = 140;
   Uint8List? _selectedLogoBytes;
   String? _selectedLogoMimeType;
@@ -37,15 +52,29 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     try {
       final apiData = await _fetchLogoFromApi();
       final firestoreData = await _fetchLogoFromFirestore();
+      final apiLogos = _normalizeLogoByDevice(apiData?['logoByDevice']);
+      final firestoreLogos = _normalizeLogoByDevice(
+        firestoreData?['logoByDevice'],
+      );
+      final mergedLogos = <String, String>{...apiLogos, ...firestoreLogos};
 
-      final resolvedLogo = (firestoreData?['logoUrl'] ?? '').toString().trim().isNotEmpty
-          ? firestoreData
-          : apiData;
+      final apiWebsiteLogo = (apiData?['logoUrl'] ?? '').toString().trim();
+      if (apiWebsiteLogo.isNotEmpty &&
+          (mergedLogos[_websiteKey] ?? '').isEmpty) {
+        mergedLogos[_websiteKey] = apiWebsiteLogo;
+      }
+      final firestoreWebsiteLogo =
+          (firestoreData?['logoUrl'] ?? '').toString().trim();
+      if (firestoreWebsiteLogo.isNotEmpty) {
+        mergedLogos[_websiteKey] = firestoreWebsiteLogo;
+      }
 
       if (!mounted) return;
       setState(() {
-        _logoUrl = (resolvedLogo?['logoUrl'] ?? '').toString().trim();
-        final rawHeight = resolvedLogo?['logoHeight'];
+        _logoByDevice = _withAllDeviceKeys(mergedLogos);
+        _logoUrl = (_logoByDevice[_selectedDeviceType] ?? '').trim();
+        final rawHeight =
+            firestoreData?['logoHeight'] ?? apiData?['logoHeight'];
         final parsedHeight = rawHeight is num
             ? rawHeight.toDouble()
             : double.tryParse('${rawHeight ?? ''}');
@@ -75,47 +104,65 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
   Future<void> _saveLogo() async {
     setState(() => _isLoading = true);
     try {
-      final previousLogo = (_logoUrl ?? '').trim();
+      final previousLogo =
+          (_logoByDevice[_selectedDeviceType] ?? '').toString().trim();
       String? selectedLogoDataUrl;
-
-      http.Response? response;
+      bool apiSucceeded = false;
       if (_selectedLogoBytes != null) {
         selectedLogoDataUrl = _buildDataUrl(
           _selectedLogoBytes!,
           _selectedLogoMimeType,
         );
 
-        response = await _saveLogoAsFile();
-        if (response.statusCode != 200) {
-          response = await _saveLogoAsDataUrl();
+        final responseAsFile = await _saveLogoAsFile();
+        if (responseAsFile.statusCode == 200) {
+          apiSucceeded = true;
+          final logoFromApi = _extractLogoFromResponse(responseAsFile.body);
+          if ((logoFromApi ?? '').trim().isNotEmpty) {
+            selectedLogoDataUrl = logoFromApi;
+          }
+        } else {
+          final responseAsDataUrl = await _saveLogoAsDataUrl();
+          apiSucceeded = responseAsDataUrl.statusCode == 200;
+          if (apiSucceeded) {
+            final logoFromApi =
+                _extractLogoFromResponse(responseAsDataUrl.body);
+            if ((logoFromApi ?? '').trim().isNotEmpty) {
+              selectedLogoDataUrl = logoFromApi;
+            }
+          }
         }
       } else if (previousLogo.isNotEmpty) {
-        response = await _saveHeightOnlyToApi(previousLogo);
+        final response = await _saveHeightOnlyToApi(previousLogo);
+        apiSucceeded = response.statusCode == 200;
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please choose a logo to upload first')),
+          SnackBar(
+            content: Text(
+              'Please choose a ${_deviceLabel(_selectedDeviceType).toLowerCase()} logo to upload first',
+            ),
+          ),
         );
         return;
       }
 
-      final apiLogoFromResponse = (response?.statusCode == 200)
-          ? _extractLogoFromResponse(response!.body)
-          : null;
-      final apiSucceeded = (response?.statusCode == 200);
-
       final firestoreUpdated = await _saveLogoToFirestore(
-          selectedLogoDataUrl ?? previousLogo);
+        deviceType: _selectedDeviceType,
+        logoUrl: selectedLogoDataUrl ?? previousLogo,
+      );
 
       if (apiSucceeded || firestoreUpdated) {
         if (!mounted) return;
         setState(() {
           _selectedLogoBytes = null;
+          _selectedLogoMimeType = null;
+          _logoUrl = (_logoByDevice[_selectedDeviceType] ?? '').trim();
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               firestoreUpdated
-                  ? 'Logo updated. Website navbar/footer will use this logo.'
+                  ? '${_deviceLabel(_selectedDeviceType)} logo updated.'
                   : 'Logo updated via API.',
             ),
           ),
@@ -136,6 +183,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
 
   Future<http.Response> _saveLogoAsFile() async {
     final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    request.fields['logoDeviceType'] = _selectedDeviceType;
     final mimeParts = (_selectedLogoMimeType ?? 'image/png').split('/');
     final mediaType = mimeParts.length == 2
         ? MediaType(mimeParts[0], mimeParts[1])
@@ -156,6 +204,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
 
   Future<http.Response> _saveLogoAsDataUrl() async {
     final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    request.fields['logoDeviceType'] = _selectedDeviceType;
     request.fields['logoUrl'] = _buildDataUrl(
       _selectedLogoBytes!,
       _selectedLogoMimeType,
@@ -168,6 +217,7 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
 
   Future<http.Response> _saveHeightOnlyToApi(String logoUrl) async {
     final request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+    request.fields['logoDeviceType'] = _selectedDeviceType;
     request.fields['logoUrl'] = logoUrl;
     request.fields['logoHeight'] = _logoHeight.toStringAsFixed(0);
     final streamedResponse = await request.send();
@@ -181,25 +231,31 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       try {
         final request =
             http.MultipartRequest('PUT', Uri.parse('$_baseUrl/hero'));
+        request.fields['logoDeviceType'] = _selectedDeviceType;
         request.fields['logoUrl'] = '';
-        request.fields['logoHeight'] = '140';
+        request.fields['logoHeight'] = _logoHeight.toStringAsFixed(0);
 
         final streamedResponse = await request.send();
         final response = await http.Response.fromStream(streamedResponse);
         apiUpdated = response.statusCode == 200;
       } catch (_) {}
 
-      final firestoreUpdated = await _saveLogoToFirestore('');
+      final firestoreUpdated = await _saveLogoToFirestore(
+        deviceType: _selectedDeviceType,
+        logoUrl: '',
+      );
 
       if (apiUpdated || firestoreUpdated) {
         if (!mounted) return;
         setState(() {
           _selectedLogoBytes = null;
-          _logoUrl = '';
-          _logoHeight = 140;
+          _selectedLogoMimeType = null;
+          _logoUrl = (_logoByDevice[_selectedDeviceType] ?? '').trim();
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logo removed')),
+          SnackBar(
+            content: Text('${_deviceLabel(_selectedDeviceType)} logo removed'),
+          ),
         );
       } else {
         throw Exception('Failed to remove logo from backend and firestore');
@@ -240,16 +296,41 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Upload website logo',
+                        'Upload logo by device type',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'This logo will appear dynamically on user website navbar and footer.',
+                      Text(
+                        'Selected ${_deviceLabel(_selectedDeviceType)} logo will appear dynamically on user app/web for that device type.',
                         style: TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 20),
+                      DropdownButtonFormField<String>(
+                        value: _selectedDeviceType,
+                        decoration: InputDecoration(
+                          labelText: 'Device Type',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: _deviceOrder
+                            .map(
+                              (device) => DropdownMenuItem(
+                                value: device,
+                                child: Text(_deviceLabel(device)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isLoading
+                            ? null
+                            : (value) {
+                                if (value != null) {
+                                  _onDeviceTypeChanged(value);
+                                }
+                              },
                       ),
                       const SizedBox(height: 28),
                       Container(
@@ -319,7 +400,9 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
                           ElevatedButton.icon(
                             onPressed: _isLoading ? null : _pickLogo,
                             icon: const Icon(Icons.upload_file),
-                            label: const Text('Choose Logo'),
+                            label: Text(
+                              'Choose ${_deviceLabel(_selectedDeviceType)} Logo',
+                            ),
                           ),
                           const SizedBox(width: 12),
                           OutlinedButton.icon(
@@ -331,7 +414,9 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
                           TextButton.icon(
                             onPressed: _isLoading ? null : _removeLogo,
                             icon: const Icon(Icons.delete_outline),
-                            label: const Text('Remove Logo'),
+                            label: Text(
+                              'Remove ${_deviceLabel(_selectedDeviceType)} Logo',
+                            ),
                             style: TextButton.styleFrom(
                               foregroundColor: Colors.redAccent,
                             ),
@@ -364,8 +449,13 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       final hero = HeroSectionModel.fromJson(jsonDecode(response.body));
       final logo = hero.logoUrl.trim();
       final height = hero.logoHeight ?? 140;
+      final byDevice = _withAllDeviceKeys(hero.logoByDevice);
+      if (logo.isNotEmpty && (byDevice[_websiteKey] ?? '').isEmpty) {
+        byDevice[_websiteKey] = logo;
+      }
       return {
         'logoUrl': logo.isEmpty ? null : logo,
+        'logoByDevice': byDevice,
         'logoHeight': height,
       };
     } catch (_) {
@@ -382,12 +472,17 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
       final data = doc.data();
       if (data == null) return null;
       final logo = (data['logoUrl'] ?? '').toString().trim();
+      final byDevice = _normalizeLogoByDevice(data['logoByDevice']);
+      if (logo.isNotEmpty && (byDevice[_websiteKey] ?? '').isEmpty) {
+        byDevice[_websiteKey] = logo;
+      }
       final heightRaw = data['logoHeight'] ?? data['logo_height'];
       double? parsedHeight;
       if (heightRaw is num) parsedHeight = heightRaw.toDouble();
       parsedHeight ??= double.tryParse('$heightRaw');
       return {
         'logoUrl': logo.isEmpty ? null : logo,
+        'logoByDevice': byDevice,
         'logoHeight': parsedHeight,
       };
     } catch (_) {
@@ -395,23 +490,81 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     }
   }
 
-  Future<bool> _saveLogoToFirestore(String logoUrl) async {
+  Future<bool> _saveLogoToFirestore({
+    required String deviceType,
+    required String logoUrl,
+  }) async {
     try {
+      final nextLogos = Map<String, String>.from(_logoByDevice);
+      nextLogos[deviceType] = logoUrl.trim();
+      final websiteLogo = (nextLogos[_websiteKey] ?? '').trim();
       await FirebaseFirestore.instance
           .collection('web_landing')
           .doc('hero')
           .set(
         {
-          'logoUrl': logoUrl,
+          'logoByDevice': _withAllDeviceKeys(nextLogos),
+          'logoUrl': websiteLogo,
           'logoHeight': _logoHeight,
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         },
         SetOptions(merge: true),
       );
+      _logoByDevice = _withAllDeviceKeys(nextLogos);
       return true;
     } catch (_) {
       return false;
     }
+  }
+
+  void _onDeviceTypeChanged(String deviceType) {
+    setState(() {
+      _selectedDeviceType = deviceType;
+      _selectedLogoBytes = null;
+      _selectedLogoMimeType = null;
+      _logoUrl = (_logoByDevice[deviceType] ?? '').trim();
+    });
+  }
+
+  String _deviceLabel(String key) {
+    switch (key) {
+      case _phoneKey:
+        return 'Phone';
+      case _tabletKey:
+        return 'Tablet';
+      case _websiteKey:
+        return 'Website';
+      default:
+        return key;
+    }
+  }
+
+  Map<String, String> _normalizeLogoByDevice(dynamic value) {
+    if (value is! Map) return _withAllDeviceKeys({});
+    final normalized = <String, String>{};
+    for (final entry in value.entries) {
+      final rawKey = entry.key.toString().trim().toLowerCase();
+      final rawValue = entry.value?.toString().trim() ?? '';
+      if (rawValue.isEmpty) continue;
+      final key = switch (rawKey) {
+        'phone' || 'mobile' => _phoneKey,
+        'tablet' || 'tab' => _tabletKey,
+        'website' || 'web' || 'desktop' => _websiteKey,
+        _ => '',
+      };
+      if (key.isNotEmpty) {
+        normalized[key] = rawValue;
+      }
+    }
+    return _withAllDeviceKeys(normalized);
+  }
+
+  Map<String, String> _withAllDeviceKeys(Map<String, String> source) {
+    return {
+      _phoneKey: (source[_phoneKey] ?? '').trim(),
+      _tabletKey: (source[_tabletKey] ?? '').trim(),
+      _websiteKey: (source[_websiteKey] ?? '').trim(),
+    };
   }
 
   String _buildDataUrl(Uint8List bytes, String? mimeType) {
@@ -423,14 +576,16 @@ class _EditLogoSectionScreenState extends ConsumerState<EditLogoSectionScreen> {
     try {
       final parsed = jsonDecode(body);
       if (parsed is Map<String, dynamic>) {
-        final logo = parsed['logoUrl'];
-        if (logo is String) {
-          final height = parsed['logoHeight'];
-          if (height is num) {
-            _logoHeight = height.toDouble().clamp(60, 240);
-          }
-          return logo;
+        final logos = _normalizeLogoByDevice(parsed['logoByDevice']);
+        final selectedLogo = (logos[_selectedDeviceType] ?? '').trim();
+        final height = parsed['logoHeight'];
+        if (height is num) {
+          _logoHeight = height.toDouble().clamp(60, 240);
         }
+        if (selectedLogo.isNotEmpty) return selectedLogo;
+
+        final logo = parsed['logoUrl'];
+        if (logo is String) return logo;
       }
     } catch (_) {}
     return null;
